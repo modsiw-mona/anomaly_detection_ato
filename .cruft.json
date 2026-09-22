@@ -1,0 +1,34 @@
+{
+  "template": "https://github.com/JoseRZapata/data-science-project-template",
+  "commit": "591127b0b358f22d61cbd24c35663fb41a29a6eb",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "project_name": "Anomaly Detection ATO",
+      "repo_name": "anomaly_detection_ato",
+      "github_username": "modsiw-mona",
+      "author_name": "Sofia A",
+      "author_email": "sofiaarangopat@hotmail.com",
+      "description": "Master's thesis project on Account Take Over (ATO) detection in authentication records using anomaly detection methodologies",
+      "compatible_python_versions": "3.12",
+      "mkdocs": true,
+      "codecov": true,
+      "license": "MIT License",
+      "_copy_without_render": [
+        ".code_quality/*",
+        ".vscode/*",
+        "config/*",
+        "data/*",
+        "src/*",
+        "tests/*",
+        ".editorconfig",
+        ".pre-commit-config.yaml",
+        "codecov.yaml",
+        "docs/*"
+      ],
+      "_template": "https://github.com/JoseRZapata/data-science-project-template",
+      "_commit": "591127b0b358f22d61cbd24c35663fb41a29a6eb"
+    }
+  },
+  "directory": null
+}
