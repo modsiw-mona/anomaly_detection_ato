@@ -1,10 +1,19 @@
 name: Pre-commit auto-update
-# PAT github secret has to be created with repo scope
-# add the secret to the repo settings
+# Run on demand only, from the Actions tab.
+#
+# The scheduled run was removed deliberately: this workflow opens a pull
+# request, which GITHUB_TOKEN cannot do here (Actions default to read-only and
+# "create and approve pull requests" is disabled), and PRs it did open would
+# not trigger CI. The alternative, a classic PAT with `repo` scope, grants
+# account-wide read/write to every repository just to bump hook versions.
+#
+# Updating hooks locally is equivalent and needs no stored credential:
+#   make pre-commit_update
+#
+# To automate this later, use a FINE-GRAINED PAT limited to this repository
+# (Contents: read/write, Pull requests: read/write) with an expiry date, stored
+# as the `PAT` secret, and restore the schedule below.
 on:
-  # every monday
-  schedule:
-    - cron: "0 7 * * 1"
   # on demand
   workflow_dispatch:
 #
