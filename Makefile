@@ -1,4 +1,4 @@
-.PHONY: tests help init_env init_git pre-commit_update docs_view docs_test test check
+.PHONY: data notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
 
 ####----Basic configurations----####
 
@@ -24,6 +24,14 @@ install_data_libs: ## Install pandas, scikit-learn, Jupyter, seaborn
 	uv add "pandas[parquet]" numpy scipy scikit-learn
 	@echo "🚀 Installing Jupyter, matplotlib and seaborn in dev..."
 	uv add jupyter matplotlib seaborn --group dev
+
+data: ## Download, verify and extract the raw dataset (DATASET=rba by default)
+	@echo "🚀 Downloading dataset $(or $(DATASET),rba)..."
+	PYTHONPATH=src uv run python -m data.download --dataset $(or $(DATASET),rba)
+
+notebooks_run: ## Execute a notebook in place, e.g. make notebooks_run NB=notebooks/1-data/x.ipynb
+	@echo "🚀 Executing $(NB)..."
+	PYTHONPATH=src uv run jupyter nbconvert --to notebook --execute --inplace "$(NB)"
 
 
 ####----Tests----####
