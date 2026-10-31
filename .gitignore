@@ -130,3 +130,15 @@ out/
 
 # Spyder
 .spyproject/
+
+# Secrets and credentials — never commit (see docs/development-plan.md, section 7)
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+kaggle.json
+credentials*
+secrets*
+.secrets*
