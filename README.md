@@ -155,9 +155,9 @@ This project was generated from [@JoseRZapata]'s [data science project template]
 [data science project template]: https://github.com/JoseRZapata/data-science-project-template
 [Data structure]: https://github.com/JoseRZapata/data-science-project-template/blob/main/anomaly_detection_ato/data/README.md
 [Mypy]: http://mypy-lang.org/
-[Notebook template]: anomaly_detection_ato/notebooks/notebook_template.ipynb
+[Notebook template]: https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/notebook_template.ipynb
 [pre-commit]: https://pre-commit.com/
-[Pull Request template]: anomaly_detection_ato/.github/pull_request_template.md
+[Pull Request template]: https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/.github/pull_request_template.md
 [Pytest]: https://docs.pytest.org/en/latest/
 [Ruff]: https://docs.astral.sh/ruff/
 [UV]: https://docs.astral.sh/uv/
