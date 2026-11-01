@@ -63,6 +63,30 @@ def artefact_flag(artefact: Artefact) -> pl.Expr:
     return flag.fill_null(value=False).alias(artefact.name)
 
 
+def mapped_fields(config: DatasetConfig) -> list[str]:
+    """Standard fields the dataset provides (labels included), in canonical order."""
+    mapped = config.rename_map().values()
+    return [f.name for f in FIELDS if f.name in mapped]
+
+
+def storage_dtype(field: str, config: DatasetConfig) -> pl.DataType:
+    """Storage type of a standard field in the intermediate dataset."""
+    match FIELDS_BY_NAME[field].kind:
+        case Kind.IDENTIFIER:
+            is_int = config.identifier_dtypes.get(field) == "Int64"
+            return pl.Int64() if is_int else pl.String()
+        case Kind.TIMESTAMP:
+            return pl.Datetime("ms")
+        case Kind.BOOLEAN:
+            return pl.Boolean()
+        case Kind.CATEGORICAL:
+            return pl.Categorical()
+        case Kind.NUMERIC:
+            return pl.Float64()
+        case Kind.TEXT:
+            return pl.String()
+
+
 def _typed(field: str, config: DatasetConfig) -> pl.Expr:
     """Strict conversion of a text column to the storage type of its kind."""
     column = pl.col(field)
@@ -87,9 +111,8 @@ def _typed(field: str, config: DatasetConfig) -> pl.Expr:
 
 def standardise(raw: pl.LazyFrame, config: DatasetConfig) -> pl.LazyFrame:
     """Apply steps 1-5 of the module docstring to a raw, all-text frame."""
-    rename = config.rename_map()
-    fields = [f.name for f in FIELDS if f.name in rename.values()]  # canonical order
-    source_of = {canonical: source for source, canonical in rename.items()}
+    fields = mapped_fields(config)
+    source_of = {canonical: source for source, canonical in config.rename_map().items()}
 
     frame = raw.with_row_index(EVENT_ID).select(
         EVENT_ID, *(pl.col(source_of[f]).alias(f) for f in fields)

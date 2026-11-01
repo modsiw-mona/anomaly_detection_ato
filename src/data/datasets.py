@@ -5,6 +5,7 @@ canonical schema in :mod:`data.schema`. It also records where the data comes fro
 it, how to cite it, and its known artefacts.
 """
 
+import datetime as dt
 import ipaddress
 import re
 from pathlib import Path
@@ -100,6 +101,55 @@ class Artefact(_Strict):
 IdentifierDtype = Literal["Int64", "String"]
 
 
+class ValidationRules(_Strict):
+    """Dataset-specific data rules, checked on the intermediate dataset (see data.validation).
+
+    Generic rules (types, required fields, unique event IDs) come from the canonical schema; these
+    capture what is specific to one dataset. Every key refers to a canonical field.
+    """
+
+    timestamp_range: tuple[dt.date, dt.date] | None = Field(
+        default=None, description="Allowed [start, end) of the timestamp."
+    )
+    unique_together: tuple[str, ...] = Field(
+        default=(), description="Fields that together identify a row."
+    )
+    allowed_values: dict[str, tuple[str, ...]] = Field(
+        default_factory=dict,
+        description="Closed set of values (nulls allowed if the field may be null).",
+    )
+    patterns: dict[str, str] = Field(
+        default_factory=dict, description="Regular expression every non-null value must match."
+    )
+    numeric_ranges: dict[str, tuple[float, float]] = Field(
+        default_factory=dict, description="Inclusive [min, max] for numeric fields."
+    )
+
+    @field_validator("patterns")
+    @classmethod
+    def _patterns_compile(cls, value: dict[str, str]) -> dict[str, str]:
+        for pattern in value.values():
+            re.compile(pattern)
+        return value
+
+    @model_validator(mode="after")
+    def _ranges_are_ordered(self) -> Self:
+        if self.timestamp_range and self.timestamp_range[0] >= self.timestamp_range[1]:
+            raise ValueError("timestamp_range start must be before its end")
+        if bad := [f for f, (lo, hi) in self.numeric_ranges.items() if lo > hi]:
+            raise ValueError(f"numeric_ranges with min > max: {bad}")
+        return self
+
+    def fields(self) -> set[str]:
+        """Every canonical field these rules refer to."""
+        return {
+            *self.unique_together,
+            *self.allowed_values,
+            *self.patterns,
+            *self.numeric_ranges,
+        }
+
+
 class DatasetConfig(_Strict):
     """Validated contents of one ``conf/dataset/<name>.yaml`` file."""
 
@@ -122,6 +172,12 @@ class DatasetConfig(_Strict):
         description="Storage type for identifier fields (default String).",
     )
     artefacts: tuple[Artefact, ...] = ()
+    catch_all_user_ids: tuple[str, ...] = Field(
+        default=(),
+        description="Raw user IDs that do not identify a real account (e.g. a bucket for attempts "
+        "against unknown accounts). Excluded from per-user behaviour.",
+    )
+    validation: ValidationRules = Field(default_factory=ValidationRules)
 
     @model_validator(mode="after")
     def _check_mapping(self) -> Self:
@@ -137,6 +193,7 @@ class DatasetConfig(_Strict):
             ("null_markers", self.null_markers.keys()),
             ("identifier_dtypes", self.identifier_dtypes.keys()),
             ("artefacts", {artefact.field for artefact in self.artefacts}),
+            ("validation", self.validation.fields()),
         ):
             if unmapped := set(fields) - mapped:
                 raise ValueError(f"{setting} refers to unmapped field(s): {sorted(unmapped)}")
