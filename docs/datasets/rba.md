@@ -142,6 +142,31 @@ Built by `make intermediate` (`src/data/intermediate.py`) in ~25 s with ~7.5 GB 
 quantities) · `user_agent` String · `rtt_ms` Float64 · plus `event_id` (row position in the raw file)
 and the two artefact flags. Rows stay in time order.
 
+## Data quality findings (EDA, issue #3)
+
+Measured in notebook `3-analysis`:
+
+- **No duplicates**: 0 identical rows, 0 repeated (user, millisecond) pairs.
+- **A catch-all user ID** (`-4324475583306591935`, declared as `catch_all_user_ids`): 14,025,899
+  attempts (45% of all rows, 75% of failed attempts) with 4 successes, from 227 countries, ~11,700
+  ASNs and 14% bots. It is not a person; it is excluded from per-user behaviour and confounds any
+  failed-login statistic that does not exclude it.
+- **Takeover labels end in November 2020.** No takeover is labelled in December 2020 – February
+  2021, although successful logins stay at ~1 M per month. Those months are *unlabelled*, not clean.
+- **`Is Attack IP` is noisy:** one active legitimate account (~6,000 successes) logs in 97% of the
+  time from "attack IPs" and has no takeover. The flag is still the strongest *global* signal for
+  takeovers (×17 on successful logins).
+- **Behaviour separates takeovers strongly** (logins with history, user-based sample): new country
+  80% vs 1% (×83), new ASN 86% vs 10% (×8), attack IP 55% vs 6% (×10).
+- **39% of takeovers happen on the user's first successful login**, so per-user novelty cannot see
+  them.
+- **Failed attempts just before a takeover are barely more frequent** than before a legitimate
+  login (×1.1–1.2).
+- **RTT is present for 1 of 140 takeovers.**
+
+**Validation rules** (`src/data/validation.py` + `validation` in `conf/dataset/rba.yaml`) pass on
+all 31.3 M rows in ~4 s, with one expected warning: the takeover on a failed login.
+
 ## Limitations
 
 - **Synthetic:** suitable for methodological research and for comparing methods, not for deploying a
@@ -154,6 +179,7 @@ and the two artefact flags. Rows stay in time order.
   the confirmed takeovers may under-represent subtle ones.
 - **Unexplained label count:** 140 takeover rows on successful logins versus 87 in the paper (see
   *Labels*).
+- **Labels cover February – November 2020 only** (see *Data quality findings*).
 - **Weakened signals:** RTT and fine-grained geography were partly randomised during synthesis, and
   RTT is missing for 96% of attempts.
 - **A catch-all user ID:** one ID holds 14 M failed attempts (45% of all rows) from 227 countries;

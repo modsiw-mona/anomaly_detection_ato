@@ -79,3 +79,22 @@ artefacts:
     kind: "in_network"
     value: "10.0.0.0/8"
     meaning: "Private-range IP that cannot appear on the public internet; synthesis placeholder."
+
+# A user ID that is not a person (measured in notebook 3-analysis): 14,025,899 attempts (45% of all
+# rows) with 4 successes, from 227 countries, 11,694 ASNs and 14% bots, spanning the whole period.
+# Almost certainly a bucket for attempts against unknown accounts. Kept in the data, excluded from
+# per-user behaviour (a "history" for it means nothing).
+catch_all_user_ids: ["-4324475583306591935"]
+
+# Dataset-specific validation rules (src/data/validation.py), each backed by a measurement in
+# notebooks 2-exploration and 3-analysis. Generic rules (types, required fields) come from the schema.
+validation:
+  timestamp_range: ["2020-02-01", "2021-03-01"]   # observed 2020-02-03 → 2021-02-28
+  unique_together: ["user_id", "timestamp"]        # 0 duplicates measured
+  allowed_values:
+    device_type: ["mobile", "desktop", "tablet", "bot", "unknown"]   # authors' README + measured
+  patterns:
+    country: "^[A-Z]{2}$"   # ISO 3166-1 alpha-2, all 216 values
+    asn: "^[0-9]+$"          # identifiers made of digits
+  numeric_ranges:
+    rtt_ms: [1, 8600000]     # authors' README range; observed 8 – 223,457 ms
