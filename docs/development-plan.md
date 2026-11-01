@@ -148,7 +148,7 @@ our assumptions:
 
 ### 5.2 Splitting
 
-- **Final test set ("final exam")**, decided by a fixed rule in #3, once we can see where the 87
+- **Final test set ("final exam")**, decided by a fixed rule in #3, once we can see where the 140
   ATOs fall in time:
   - If the last ~20% of the timeline contains at least 20 ATOs → **time-based split**: train on
     the earlier months, test on the later ones. This is the preferred option because it mimics
@@ -252,7 +252,7 @@ must never be copied into it.
 | 0 · setup | This plan; `CLAUDE.md` update; Python 3.14 upgrade; gitleaks hook; `.gitignore` hardening |
 | #1 | Scripted, verified download; dataset card; translation file; canonical schema; data requirements; notebook `1-data` answering the 14 problem-definition questions |
 | #2 | Load into the canonical schema, unify nulls, fix data types, flag artefacts → parquet in `data/02_intermediate/`; notebook `2-exploration` |
-| #3 | Univariate / bivariate / multivariate EDA; deep dive on the 87 ATOs (timeline, users, failures before success, attack-IP overlap); artefact, geography and RTT checks; validation rules; split decision; sample definition; notebook `3-analysis` |
+| #3 | Univariate / bivariate / multivariate EDA; deep dive on the 140 ATOs (timeline, users, failures before success, attack-IP overlap); artefact, geography and RTT checks; validation rules; split decision; sample definition; notebook `3-analysis` |
 | #4 | Behaviour features (polars, no future peeking) + scikit-learn preprocessing pipeline → `data/04_feature/`; notebook `4-feat_eng` |
 | #5 | Dummy + Freeman baseline, validation protocol, CV, learning curves; notebook `5-models` |
 | #6 | Model-family comparison, ablations (geography, RTT, identity encodings, artefacts), tuning of the top 2–3, best pipeline → `.joblib`; notebook `5-models` |
@@ -265,7 +265,7 @@ must never be copied into it.
 | --- | --- |
 | 16 GB RAM vs 31.3M rows | polars streaming, categoricals, column pruning, cached parquet stages, user-based sample |
 | Freeman score cost | vectorised cumulative counts instead of per-row loops |
-| 87 positives → high-variance metrics | repeated grouped CV, bootstrap CIs, alert-budget recall |
+| 140 positives → high-variance metrics | repeated grouped CV, bootstrap CIs, alert-budget recall |
 | Synthetic artefacts | behaviour-first features, flags, ablations |
 | Future information leaking into features | strict "past only" computation, unit-tested |
 | A library failing on Python 3.14 | caught at `uv lock`; fall back to 3.13 for that library only if unavoidable, documented |

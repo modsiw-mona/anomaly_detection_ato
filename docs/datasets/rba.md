@@ -8,9 +8,9 @@
 | | |
 | --- | --- |
 | **What** | Login attempts to a large single sign-on (SSO) service in Norway, one row per attempt |
-| **Size** | 31.3 M login attempts, 3.3 M users (companion paper); 15 columns |
+| **Size** | 31,269,264 login attempts; 3,304,502 users with at least one successful login (4,304,857 distinct user IDs overall); 15 columns + a row index; 9.05 GB CSV |
 | **Period** | February 2020 – February 2021 (original collection) |
-| **Labels** | `Is Account Takeover` (confirmed by incident response, 87 among successful logins per the paper); `Is Attack IP` (IP found in attacker lists) |
+| **Labels** | `Is Account Takeover`: **141 rows (140 on successful logins, 138 users)**, confirmed by incident response — the paper reports 87, see *Labels* · `Is Attack IP`: 3,096,977 rows (9.90% of attempts) |
 | **Nature** | **Synthesised** from real behaviour: frequencies preserved, values artificial |
 | **Source** | Zenodo, DOI [10.5281/zenodo.6782156](https://doi.org/10.5281/zenodo.6782156), v1.0.0 · mirror: Kaggle `dasgroup/rba-dataset` · project page: [das-group/rba-dataset](https://github.com/das-group/rba-dataset) |
 | **Licence** | CC BY 4.0. Citing the paper below is a condition of use. |
@@ -33,7 +33,7 @@ no authentication records).
 
 | Column in file | Standard name | Role | Notes |
 | --- | --- | --- | --- |
-| `User ID` | `user_id` | required | Random pseudonym |
+| `User ID` | `user_id` | required | Random pseudonym. ~1 M IDs appear only in failed attempts (likely non-existent accounts targeted by attackers) |
 | `Login Timestamp` | `timestamp` | required | Order preserved, randomness added |
 | `Login Successful` | `login_success` | required | |
 | `IP Address` | `ip` | context | Synthetic value; see artefacts |
@@ -41,11 +41,11 @@ no authentication records).
 | `Device Type` | `device_type` | context | Identical to the real data; empty for 1,526 unparseable user agents |
 | `User Agent String` | `user_agent` | context | Regenerated from OS and browser |
 | `Country` | `country` | optional | Synthetic value, real frequencies |
-| `Region` | `region` | optional | Derived from the synthetic IP |
-| `City` | `city` | optional | Derived from the synthetic IP |
+| `Region` | `region` | optional | Derived from the synthetic IP; `-` used as a null marker |
+| `City` | `city` | optional | Derived from the synthetic IP; `-` used as a null marker |
 | `OS Name and Version` | `os` | optional | |
 | `Browser Name and Version` | `browser` | optional | |
-| `Round-Trip Time [ms]` | `rtt_ms` | optional | Realistic values, reassigned within each geolocation |
+| `Round-Trip Time [ms]` | `rtt_ms` | optional | Realistic values, reassigned within each geolocation; often empty |
 | `Is Account Takeover` | `label_ato` | label | Confirmed takeovers only |
 | `Is Attack IP` | `label_attack_ip` | label | Proxy for attack *attempts* |
 
@@ -85,8 +85,12 @@ Statements from the dataset authors' README ("Data Creation"), not our assumptio
 ## Labels
 
 - **`Is Account Takeover`**: login attempts the service's incident response team identified as
-  account takeovers. The paper reports **87 successful logins** — about 0.0007% of 12.5 M successful
-  logins. True means *confirmed*; false means *not flagged*, which is not the same as legitimate. This
+  account takeovers. **The published file has 141 such rows: 140 on successful logins (0.0011% of
+  12,541,442) and 1 on a failed login, belonging to 138 distinct users** (3 users have two rows).
+  The companion paper reports *"87 successful logins were detected as account takeover"* (§4.1) for
+  the original data, and does not describe how the label was carried into the synthesised release.
+  The difference is **unexplained by the authors**; the published file is the source of truth for
+  this project, and the discrepancy is reported as a limitation. True means *confirmed*; false means *not flagged*, which is not the same as legitimate. This
   is a **positive-unlabelled (PU)** label, so precision is reported as a lower bound.
 - **`Is Attack IP`**: the IP appears in the FireHOL attacker lists, matched against the original
   data. It marks *attack attempts*, mostly failed, not confirmed takeovers. It is never the modelling
@@ -110,10 +114,12 @@ frequencies only. The same holds for our behaviour features, and an ablation in 
   model trained on it.
 - **One service, one country, one year:** a Norwegian SSO in 2020–2021, during the pandemic.
   Generalisation to other services is not established.
-- **Few, incomplete labels:** 87 confirmed takeovers make every metric noisy (confidence intervals
+- **Few, incomplete labels:** 140 confirmed takeovers make every metric noisy (confidence intervals
   are mandatory), and unconfirmed takeovers sit among the "negatives".
 - **Possible label bias:** the incident response team probably caught the most visible takeovers, so
-  the 87 may under-represent subtle ones.
+  the confirmed takeovers may under-represent subtle ones.
+- **Unexplained label count:** 140 takeover rows on successful logins versus 87 in the paper (see
+  *Labels*).
 - **Weakened signals:** RTT and fine-grained geography were partly randomised during synthesis.
 
 ## Ethics and privacy

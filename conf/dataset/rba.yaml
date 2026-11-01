@@ -9,8 +9,9 @@
 
 name: "rba"
 description: >-
-  Synthesized login feature data of more than 31M login attempts by more than 3.3M users of a
-  large-scale single sign-on service in Norway, collected February 2020 - February 2021.
+  Synthesized login feature data of 31.3M login attempts by 3.3M users (4.3M distinct user IDs,
+  counting IDs seen only in failed attempts) of a large-scale single sign-on service in Norway,
+  collected February 2020 - February 2021.
   Per-user and global frequencies of the categorical features match the real data; the values
   themselves are synthetic.
 
@@ -19,7 +20,7 @@ source:
   archive: "rba-dataset.zip"
   md5: "cc1b1078b3929650e6c08678caffcc57"
   member: "rba-dataset.csv"
-  max_uncompressed_bytes: 20000000000
+  max_uncompressed_bytes: 10000000000  # archive expands to 9.06 GB
   doi: "10.5281/zenodo.6782156"
   version: "v1.0.0"
   license: "CC-BY-4.0"
