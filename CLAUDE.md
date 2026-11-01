@@ -53,6 +53,18 @@ uv add <pkg> --group dev  # add a dev dep
 uv run pytest tests/test_x.py::test_y -v   # single test
 ```
 
+Data pipeline, in order (each step is idempotent; `DATASET=<name>` selects another dataset):
+
+```bash
+make data               # download + verify + safely extract   -> data/01_raw/
+make intermediate       # standard names, types, nulls, flags  -> data/02_intermediate/<name>.parquet
+make features           # past-only behavioural features       -> data/04_feature/<name>_features.parquet
+make split              # dev/test by user (pre-registered)    -> data/05_model_input/<name>_split.parquet
+make notebooks_run NB=notebooks/<folder>/<file>.ipynb   # execute a notebook in place
+```
+
+The test side of the split is not looked at until issue #7 (final evaluation).
+
 Always use `uv run` / `uv add` — never bare `pip` or `python`.
 
 ## Architecture

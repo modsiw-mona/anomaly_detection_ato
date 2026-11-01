@@ -1,4 +1,4 @@
-.PHONY: data intermediate notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
+.PHONY: data intermediate features split notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
 
 ####----Basic configurations----####
 
@@ -32,6 +32,14 @@ data: ## Download, verify and extract the raw dataset (DATASET=rba by default)
 intermediate: ## Build data/02_intermediate/<dataset>.parquet from the raw file (DATASET=rba)
 	@echo "🚀 Building intermediate dataset $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m data.intermediate --dataset $(or $(DATASET),rba)
+
+features: ## Build data/04_feature/<dataset>_features.parquet from the intermediate data (DATASET=rba)
+	@echo "🚀 Building features for $(or $(DATASET),rba)..."
+	PYTHONPATH=src uv run python -m data.features --dataset $(or $(DATASET),rba)
+
+split: ## Assign users to dev/test (grouped by user, stratified by label) (DATASET=rba)
+	@echo "🚀 Splitting $(or $(DATASET),rba)..."
+	PYTHONPATH=src uv run python -m data.split --dataset $(or $(DATASET),rba)
 
 notebooks_run: ## Execute a notebook in place, e.g. make notebooks_run NB=notebooks/1-data/x.ipynb
 	@echo "🚀 Executing $(NB)..."
