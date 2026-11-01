@@ -36,8 +36,14 @@ file that maps too few fields is rejected when it is loaded.
 
 1. Copy `conf/dataset/rba.yaml` to `conf/dataset/<name>.yaml` and fill in the source, the
    checksum and the column mapping. Only map columns the dataset actually has.
-2. Write `docs/datasets/<name>.md` using `rba.md` as the model.
-3. Run `PYTHONPATH=src uv run python -m data.download --dataset <name>`.
+2. Scan the raw values (as in notebook `2-exploration`) and declare what you find:
+   - `timestamp_format`: the format of the timestamp column;
+   - `null_markers`: per column, the raw values that mean "missing". Never global: a value that
+     means "missing" in one column can be real data in another (`Nan` is a province in Thailand);
+   - `identifier_dtypes`: `Int64` for integer IDs, otherwise IDs are kept as text;
+   - `artefacts`: known generation artefacts to flag (`at_least` or `in_network` rules).
+3. Write `docs/datasets/<name>.md` using `rba.md` as the model.
+4. Run `make data DATASET=<name>`, then `make intermediate DATASET=<name>`.
 
 No pipeline code changes are needed.
 
