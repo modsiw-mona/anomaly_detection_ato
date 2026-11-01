@@ -24,7 +24,7 @@ Every unit of work follows this, without exception:
 3. Commit with **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`…) — enforced by the
    commitizen pre-commit hook; a non-conforming message is rejected.
 4. Open a **Pull Request into `main`** with `Closes #<n>` in the body.
-5. CI must pass. **Sofía merges** (squash). Claude opens PRs and never merges them.
+5. CI must pass. **Sofía merges with "Create a merge commit"**. Claude opens PRs and never merges them.
 
 This is a solo thesis: there is **no human reviewer**, and none should be requested. The
 `protect-main` ruleset requires a PR plus green `test`, `pre-commit` and `actionlint` checks, with

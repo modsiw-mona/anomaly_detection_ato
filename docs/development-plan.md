@@ -226,11 +226,13 @@ must never be copied into it.
 
 - One branch per issue via `gh issue develop <n>`; conventional commits; PR body `Closes #n`.
 - `make check` and `make test` before every push. Claude opens the PR, waits for CI to go green,
-  and reports. **Sofía merges** — Claude never merges. The `protect-main` ruleset enforces PR +
+  and reports. **Sofía merges, with "Create a merge commit"** (GitFlow style, keeps each conventional
+  commit on `main`) — Claude never merges. The `protect-main` ruleset enforces PR +
   green `test`, `pre-commit` and `actionlint`, with 0 approvals.
 - While a PR waits for merge, Claude continues the next issue on a branch **stacked** on it (PR
-  base = the previous branch). Once the earlier PR is merged, Claude merges `main` into the stacked
-  branch (a merge, never a rebase or force-push) so its PR shows only its own changes.
+  base = the previous branch). Merge commits keep the stacked branch's commits identical to those on
+  `main`, so no rebuild is needed: once the earlier PR is merged, GitHub retargets the next PR to
+  `main` and Claude merges `main` into it if required (never a rebase or force-push).
 - **Everything in English:** notebook text, code, docs, commits.
 - Notebooks start from `notebooks/notebook_template.ipynb`, are executed headless
   (`jupyter nbconvert --execute`), and are committed with outputs so results are visible on GitHub.
