@@ -20,7 +20,7 @@ import numpy as np
 import polars as pl
 
 from data.datasets import DatasetConfig, find_repo_root, load_dataset_config
-from data.features import LABEL, USER, features_path
+from data.features import EVENT_ID, LABEL, USER, features_path
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +65,18 @@ def split_path(config: DatasetConfig, data_dir: Path) -> Path:
 
 
 def load_side(config: DatasetConfig, data_dir: Path, side: str) -> pl.LazyFrame:
-    """Feature rows of one side of the split (``dev`` or ``test``)."""
+    """Feature rows of one side of the split (``dev`` or ``test``), ordered by ``event_id``.
+
+    Joins do not guarantee row order; a fixed order keeps every seeded step downstream (sampling,
+    bootstrap) reproducible from run to run.
+    """
     if side not in {"dev", "test"}:
         raise ValueError("side must be 'dev' or 'test'")
     users = pl.scan_parquet(split_path(config, data_dir)).filter(pl.col("split") == side)
-    return pl.scan_parquet(features_path(config, data_dir)).join(
-        users.select(USER), on=USER, how="semi"
+    return (
+        pl.scan_parquet(features_path(config, data_dir))
+        .join(users.select(USER), on=USER, how="semi")
+        .sort(EVENT_ID)
     )
 
 
