@@ -107,10 +107,10 @@ dataset (issue #2):
 | `ip_is_placeholder` | `ip ∈ 10.0.0.0/8` | 7,291,335 (23.3%) | 28.7% | 15.3% | Private-range IP that cannot appear on the internet; synthesis placeholder |
 
 According to the authors, these values do not affect Freeman RBA scores, since that model uses
-frequencies only. **But they are not spread evenly:** placeholder IPs are almost twice as frequent in
-failed logins as in successful ones, so the artefact is correlated with attack activity. A model could
-learn "placeholder IP ⇒ suspicious", which reflects how the data was generated, not attacker
-behaviour. Issue #3 measures the link with the labels, and an ablation in issue #6 checks the effect.
+frequencies only. Placeholder IPs look more frequent in failed logins than in successful ones, but
+that is **confounded by a catch-all user ID** (see *Data quality findings* in the EDA, issue #3):
+among real accounts the relation reverses (10.8% of failed vs 15.3% of successful logins). Issue #3
+measures the link with the labels, and an ablation in issue #6 checks the effect.
 
 ## Intermediate dataset (`data/02_intermediate/rba.parquet`)
 
@@ -156,8 +156,9 @@ and the two artefact flags. Rows stay in time order.
   *Labels*).
 - **Weakened signals:** RTT and fine-grained geography were partly randomised during synthesis, and
   RTT is missing for 96% of attempts.
-- **Artefacts correlated with attacks:** placeholder IPs are twice as frequent in failed logins
-  (see *Known artefacts*).
+- **A catch-all user ID:** one ID holds 14 M failed attempts (45% of all rows) from 227 countries;
+  it is not a person, and it distorts any per-user or failed-login statistic that does not exclude it
+  (documented in the EDA, issue #3).
 
 ## Ethics and privacy
 
