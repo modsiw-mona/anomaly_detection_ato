@@ -178,6 +178,11 @@ class DatasetConfig(_Strict):
         "against unknown accounts). Excluded from per-user behaviour.",
     )
     validation: ValidationRules = Field(default_factory=ValidationRules)
+    label_window: tuple[dt.date, dt.date] | None = Field(
+        default=None,
+        description="[start, end) of the period whose labels are trustworthy. Only logins in it are "
+        "scored and evaluated; earlier and later events may still feed past-only history features.",
+    )
 
     @model_validator(mode="after")
     def _check_mapping(self) -> Self:
@@ -201,6 +206,8 @@ class DatasetConfig(_Strict):
             f for f in self.identifier_dtypes if FIELDS_BY_NAME[f].kind is not Kind.IDENTIFIER
         }:
             raise ValueError(f"identifier_dtypes only applies to identifiers: {sorted(not_ids)}")
+        if self.label_window and self.label_window[0] >= self.label_window[1]:
+            raise ValueError("label_window start must be before its end")
         return self
 
     def rename_map(self) -> dict[str, str]:

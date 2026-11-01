@@ -98,3 +98,9 @@ validation:
     asn: "^[0-9]+$"          # identifiers made of digits
   numeric_ranges:
     rtt_ms: [1, 8600000]     # authors' README range; observed 8 – 223,457 ms
+
+# Period with trustworthy takeover labels. Measured in notebook 3-analysis: no takeover is labelled
+# after November 2020 although login volume is unchanged, so later months are unlabelled, not clean.
+# Decided by the thesis author on 2026-11-01 (development plan, stop point 1): only logins in this
+# window are scored and evaluated; other months may still feed past-only history features.
+label_window: ["2020-02-01", "2020-12-01"]   # [start, end)

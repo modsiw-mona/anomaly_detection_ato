@@ -157,6 +157,11 @@ our assumptions:
   - Either way, **all logins of one user land on the same side**, so the model cannot memorise a
     user's habits from training and get an easy test.
   - The test set is used **once**, in #7.
+- **Label window (decided 2026-11-01, stop point 1):** takeover labels end in November 2020 (EDA,
+  issue #3), so only logins from **2020-02-01 to 2020-11-30** are scored and evaluated
+  (`label_window` in the translation file). Later months may still feed past-only history features.
+- **Split outcome (rule applied in issue #3):** the last 20% of the timeline holds no takeover, so the
+  final test set is a **random 20% of users, grouped by user and stratified by label**.
 - **Validation inside the training data:** repeated, user-grouped, stratified k-fold
   (5 folds × at least 3 repeats), reporting mean ± std and bootstrap 95% confidence intervals.
 
