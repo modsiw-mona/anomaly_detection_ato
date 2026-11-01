@@ -1,4 +1,4 @@
-"""Load and validate per-dataset configuration files (``conf/dataset/<name>.toml``).
+"""Load and validate per-dataset configuration files (``conf/dataset/<name>.yaml``).
 
 A dataset configuration is the "translation file" between a dataset's own column names and the
 canonical schema in :mod:`data.schema`. It also records where the data comes from, how to verify
@@ -6,10 +6,10 @@ it, how to cite it, and its known artefacts.
 """
 
 import re
-import tomllib
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 from data.schema import FIELDS_BY_NAME, LABEL_FIELDS, check_requirements
@@ -87,7 +87,7 @@ class Artefact(_Strict):
 
 
 class DatasetConfig(_Strict):
-    """Validated contents of one ``conf/dataset/<name>.toml`` file."""
+    """Validated contents of one ``conf/dataset/<name>.yaml`` file."""
 
     name: str
     description: str
@@ -115,7 +115,7 @@ class DatasetConfig(_Strict):
 
 
 def load_dataset_config(name: str, conf_dir: Path | None = None) -> DatasetConfig:
-    """Load and validate ``conf/dataset/<name>.toml``.
+    """Load and validate ``conf/dataset/<name>.yaml`` (parsed with ``yaml.safe_load``).
 
     Args:
         name: Dataset name (lowercase letters, digits, ``_`` and ``-``).
@@ -129,6 +129,6 @@ def load_dataset_config(name: str, conf_dir: Path | None = None) -> DatasetConfi
     if not _NAME_PATTERN.fullmatch(name):
         raise ValueError(f"Invalid dataset name {name!r}")
     directory = conf_dir or find_repo_root() / "conf" / "dataset"
-    with (directory / f"{name}.toml").open("rb") as handle:
-        raw = tomllib.load(handle)
+    with (directory / f"{name}.yaml").open(encoding="utf-8") as handle:
+        raw: object = yaml.safe_load(handle)
     return DatasetConfig.model_validate(raw)

@@ -1,0 +1,67 @@
+# Translation file for the "Login Data Set for Risk-Based Authentication".
+#
+# Maps this dataset's column names onto the canonical schema (src/data/schema.py) and records
+# provenance, verification and known artefacts. Full context: docs/datasets/rba.md
+#
+# Loaded with yaml.safe_load and validated by src/data/datasets.py — unknown keys and invalid
+# values are rejected. Strings are quoted on purpose: YAML 1.1 (PyYAML) silently turns unquoted
+# words such as `yes`, `no`, `on` and `off` into booleans.
+
+name: "rba"
+description: >-
+  Synthesized login feature data of more than 31M login attempts by more than 3.3M users of a
+  large-scale single sign-on service in Norway, collected February 2020 - February 2021.
+  Per-user and global frequencies of the categorical features match the real data; the values
+  themselves are synthetic.
+
+source:
+  url: "https://zenodo.org/api/records/6782156/files/rba-dataset.zip/content"
+  archive: "rba-dataset.zip"
+  md5: "cc1b1078b3929650e6c08678caffcc57"
+  member: "rba-dataset.csv"
+  max_uncompressed_bytes: 20000000000
+  doi: "10.5281/zenodo.6782156"
+  version: "v1.0.0"
+  license: "CC-BY-4.0"
+  citation: >-
+    Wiefling, S., Jørgensen, P. R., Thunem, S., & Lo Iacono, L. (2022). Pump Up Password Security!
+    Evaluating and Enhancing Risk-Based Authentication on a Real-World Large-Scale Online Service.
+    ACM Transactions on Privacy and Security, 26(1). https://doi.org/10.1145/3546069
+  homepage: "https://github.com/das-group/rba-dataset"
+  mirrors:
+    - "https://www.kaggle.com/datasets/dasgroup/rba-dataset"
+
+# canonical field: "column name in this dataset"
+columns:
+  user_id: "User ID"
+  timestamp: "Login Timestamp"
+  login_success: "Login Successful"
+  ip: "IP Address"
+  asn: "ASN"
+  device_type: "Device Type"
+  user_agent: "User Agent String"
+  country: "Country"
+  region: "Region"
+  city: "City"
+  os: "OS Name and Version"
+  browser: "Browser Name and Version"
+  rtt_ms: "Round-Trip Time [ms]"
+
+labels:
+  label_ato: "Is Account Takeover"
+  label_attack_ip: "Is Attack IP"
+
+# Placeholders the authors had to invent to resolve conflicts during synthesis (dataset README,
+# "Regarding the Data Values"). They are flagged, quantified and checked with an ablation — not
+# deleted. See docs/development-plan.md, section 4.4.
+artefacts:
+  - name: "asn_is_placeholder"
+    field: "asn"
+    kind: "at_least"
+    value: 500000
+    meaning: "ASN does not exist in reality; assigned to resolve a data-creation conflict."
+  - name: "ip_is_placeholder"
+    field: "ip"
+    kind: "in_network"
+    value: "10.0.0.0/8"
+    meaning: "Private-range IP that cannot appear on the public internet; synthesis placeholder."

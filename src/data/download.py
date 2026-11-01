@@ -170,7 +170,7 @@ def download_dataset(config: DatasetConfig, raw_dir: Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.toml")
+    parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

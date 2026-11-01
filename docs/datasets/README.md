@@ -5,7 +5,7 @@ minimum requirements below. Each dataset is described by two files:
 
 | File | Audience | Content |
 | --- | --- | --- |
-| `conf/dataset/<name>.toml` | the code | Translation of the dataset's column names to the standard names, where to download it, its checksum, licence and known artefacts. Validated on load. |
+| `conf/dataset/<name>.yaml` | the code | Translation of the dataset's column names to the standard names, where to download it, its checksum, licence and known artefacts. Validated on load. |
 | `docs/datasets/<name>.md` | people | Dataset card: provenance, how it was produced, what the labels mean, how faithful each signal is, limitations. |
 
 ## Minimum data requirements
@@ -34,7 +34,7 @@ file that maps too few fields is rejected when it is loaded.
 
 ## Adding a dataset
 
-1. Copy `conf/dataset/rba.toml` to `conf/dataset/<name>.toml` and fill in the source, the
+1. Copy `conf/dataset/rba.yaml` to `conf/dataset/<name>.yaml` and fill in the source, the
    checksum and the column mapping. Only map columns the dataset actually has.
 2. Write `docs/datasets/<name>.md` using `rba.md` as the model.
 3. Run `PYTHONPATH=src uv run python -m data.download --dataset <name>`.

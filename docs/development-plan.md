@@ -44,8 +44,14 @@ cloud services.
 - Every library is resolved to its latest release by `uv`, all of which declare Python 3.14 support:
   polars 2.1, pandas 3.1, numpy 2.5, scikit-learn 1.9, xgboost 3.4, lightgbm 4.7, pyod 3.6,
   numba 0.68, pandera 0.35, optuna 5.0, shap 0.54, pydantic 2.14, streamlit 1.66, jupyterlab 4.6.
-- **Maintenance rule:** a library must have had a release in the last 12 months and support
-  Python 3.14. This rejected `detect-secrets` (last release 2024) in favour of `gitleaks`.
+- **Maintenance rule:** a library must be *actively maintained* — not archived, with commits or
+  releases in the last 12 months — and support Python 3.14. Mature libraries that release rarely
+  still qualify (PyYAML: last release 2025-09, commits through 2026-10). This rule rejected
+  `detect-secrets` (no release since 2024) in favour of `gitleaks`.
+- **Configuration format:** YAML for project and pipeline configuration (`conf/`), as in the
+  course template and the ML ecosystem (Hydra, DVC, Kedro); TOML only for packaging and tool
+  settings (`pyproject.toml`, `ruff.toml`). YAML files are read with `yaml.safe_load` and validated
+  with pydantic; strings are quoted to avoid YAML 1.1 implicit booleans (`yes`, `no`, `on`, `off`).
 - **Hydra** (`hydra-core` 1.3.8) is maintained, but its metadata only declares Python ≤ 3.11. It
   is used only if it runs cleanly on 3.14. Fallback: plain YAML files in `conf/`, validated with
   pydantic.

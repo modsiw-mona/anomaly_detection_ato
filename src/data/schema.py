@@ -1,7 +1,7 @@
 """Canonical login-event schema shared by every dataset.
 
 Feature and model code only ever use the field names defined here. Each dataset maps its own
-column names onto them in ``conf/dataset/<name>.toml``, so supporting a new dataset means writing
+column names onto them in ``conf/dataset/<name>.yaml``, so supporting a new dataset means writing
 a new mapping file, not changing code.
 
 Minimum data requirements (see ``docs/datasets/README.md``): every dataset must provide all

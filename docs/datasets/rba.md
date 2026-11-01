@@ -1,6 +1,6 @@
 # Dataset card — Login Data Set for Risk-Based Authentication (`rba`)
 
-> Translation file: [`conf/dataset/rba.toml`](../../conf/dataset/rba.toml) ·
+> Translation file: [`conf/dataset/rba.yaml`](../../conf/dataset/rba.yaml) ·
 > First look: [`notebooks/1-data/01-sap-data_download-2026_10_31.ipynb`](../../notebooks/1-data/01-sap-data_download-2026_10_31.ipynb)
 
 ## At a glance
@@ -94,7 +94,7 @@ Statements from the dataset authors' README ("Data Creation"), not our assumptio
 
 ## Known artefacts
 
-Declared in `conf/dataset/rba.toml` (`[[artefacts]]`), flagged as boolean columns from issue #2:
+Declared in `conf/dataset/rba.yaml` (`[[artefacts]]`), flagged as boolean columns from issue #2:
 
 | Flag | Rule | Meaning |
 | --- | --- | --- |
