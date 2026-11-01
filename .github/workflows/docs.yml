@@ -1,19 +1,25 @@
 name: Docs
 
+# Builds the documentation on every pull request that touches it, so broken docs (bad links,
+# missing pages) are caught before merging. Publishing is intentionally disabled (decided
+# 2026-11-01): no token, no GitHub Pages site. Material for MkDocs reaches end of life on
+# 2027-05-05; when a public site is wanted, build it with Zensical, its maintained successor.
 on:
   pull_request:
     branches:
       - main
     paths:
-      - 'docs/**'
-      - 'readme.md'
-    types:
-      - closed
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
-#
+permissions:
+  contents: read
+
 jobs:
-  build-and-publish:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -26,11 +32,7 @@ jobs:
         with:
           python-version-file: ".python-version"
 
-      - name: Build docs
-        run: uv run mkdocs build --clean
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.PAT }}
-          publish_dir: ./site
-#
+      - name: Build docs (strict, nothing published)
+        run: uv run mkdocs build --strict
+        env:
+          NO_MKDOCS_2_WARNING: "1"
