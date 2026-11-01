@@ -98,15 +98,49 @@ Statements from the dataset authors' README ("Data Creation"), not our assumptio
 
 ## Known artefacts
 
-Declared in `conf/dataset/rba.yaml` (`[[artefacts]]`), flagged as boolean columns from issue #2:
+Declared in `conf/dataset/rba.yaml` (`artefacts`), flagged as boolean columns in the intermediate
+dataset (issue #2):
 
-| Flag | Rule | Meaning |
-| --- | --- | --- |
-| `asn_is_placeholder` | `asn ≥ 500000` | ASN that does not exist; assigned to resolve a synthesis conflict |
-| `ip_is_placeholder` | `ip ∈ 10.0.0.0/8` | Private-range IP that cannot appear on the internet; synthesis placeholder |
+| Flag | Rule | Rows | Failed logins | Successful logins | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `asn_is_placeholder` | `asn ≥ 500000` | 1,457,824 (4.7%) | 5.1% | 4.1% | ASN that does not exist; assigned to resolve a synthesis conflict |
+| `ip_is_placeholder` | `ip ∈ 10.0.0.0/8` | 7,291,335 (23.3%) | 28.7% | 15.3% | Private-range IP that cannot appear on the internet; synthesis placeholder |
 
 According to the authors, these values do not affect Freeman RBA scores, since that model uses
-frequencies only. The same holds for our behaviour features, and an ablation in issue #6 checks it.
+frequencies only. **But they are not spread evenly:** placeholder IPs are almost twice as frequent in
+failed logins as in successful ones, so the artefact is correlated with attack activity. A model could
+learn "placeholder IP ⇒ suspicious", which reflects how the data was generated, not attacker
+behaviour. Issue #3 measures the link with the labels, and an ablation in issue #6 checks the effect.
+
+## Intermediate dataset (`data/02_intermediate/rba.parquet`)
+
+Built by `make intermediate` (`src/data/intermediate.py`) in ~25 s with ~7.5 GB peak memory; 676 MB
+(zstd) from the 9.05 GB CSV. Verified against the raw file on 12 independent counts
+(notebook `2-exploration`).
+
+**Missing values**, decided from a scan of every column and declared per column (`null_markers`):
+
+| Value | Column | Verdict |
+| --- | --- | --- |
+| `-` | `region`, `city` | Null marker |
+| `Nan` | `region` (3 rows) | **Real value**: Nan province, Thailand (city Pua) |
+| `unknown` | `device_type` (867,371 rows) | **Real category**, listed by the authors |
+| empty | `device_type` (1,526 rows) | Kept as null: unparseable user agents (authors' README) |
+
+**Coverage after unifying nulls:**
+
+| Field | Missing | Notes |
+| --- | --- | --- |
+| `rtt_ms` | 95.9% | Present for 7.0% of successful and 2.1% of failed logins |
+| `region` | 45.0% | Present for 62.4% of successful logins |
+| `city` | 44.5% | Present for 63.0% of successful logins |
+| `device_type` | 0.005% | Plus 867,371 `unknown` |
+| all others | 0% | |
+
+**Storage types:** `user_id` Int64 · `timestamp` Datetime[ms] · `login_success` and labels Boolean ·
+`ip`, `asn`, `country`, `region`, `city`, `os`, `browser`, `device_type` Categorical (identities, not
+quantities) · `user_agent` String · `rtt_ms` Float64 · plus `event_id` (row position in the raw file)
+and the two artefact flags. Rows stay in time order.
 
 ## Limitations
 
@@ -120,7 +154,10 @@ frequencies only. The same holds for our behaviour features, and an ablation in 
   the confirmed takeovers may under-represent subtle ones.
 - **Unexplained label count:** 140 takeover rows on successful logins versus 87 in the paper (see
   *Labels*).
-- **Weakened signals:** RTT and fine-grained geography were partly randomised during synthesis.
+- **Weakened signals:** RTT and fine-grained geography were partly randomised during synthesis, and
+  RTT is missing for 96% of attempts.
+- **Artefacts correlated with attacks:** placeholder IPs are twice as frequent in failed logins
+  (see *Known artefacts*).
 
 ## Ethics and privacy
 
