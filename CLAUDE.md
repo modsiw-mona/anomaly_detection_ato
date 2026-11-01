@@ -23,10 +23,21 @@ Every unit of work follows this, without exception:
 2. Create a branch **from the issue** (gitflow naming, e.g. `feat/1-descarga-de-datos`).
 3. Commit with **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`…) — enforced by the
    commitizen pre-commit hook; a non-conforming message is rejected.
-4. Open a **Pull Request into `main`**.
-5. CI must pass, then merge.
+4. Open a **Pull Request into `main`** with `Closes #<n>` in the body.
+5. CI must pass. **Sofía merges** (squash). Claude opens PRs and never merges them.
 
-Never commit directly to `main`.
+This is a solo thesis: there is **no human reviewer**, and none should be requested. The
+`protect-main` ruleset requires a PR plus green `test`, `pre-commit` and `actionlint` checks, with
+0 approvals, and blocks force-pushes and deletion of `main`. Direct pushes to `main` are rejected.
+
+## Plan and data rules
+
+- **[`docs/development-plan.md`](docs/development-plan.md)** is the source of truth for
+  decisions, the evaluation protocol, and the stop-and-ask points. Read it before starting an issue.
+- Dataset context lives in `docs/datasets/<name>.md` (dataset card) and
+  `conf/dataset/<name>.yaml` (column mapping + rules).
+- Never clone, install or execute third-party repositories. Read reference code as text and
+  re-implement it.
 
 ## Commands
 
@@ -78,7 +89,7 @@ Notebook folders mirror the stages, and map to the 8 issues:
 | #3 | Análisis exploratorio (EDA) | `notebooks/3-analysis/` |
 | #4 | Feature Engineering | `notebooks/4-feat_eng/` |
 | #5 | Modelo BaseLine | `notebooks/5-models/` |
-| #6 | Selección del mejor modelo | `notebooks/6-interpretation/` |
+| #6 | Selección del mejor modelo | `notebooks/5-models/` |
 | #7 | Interpretación del modelo | `notebooks/6-interpretation/` |
 | #8 | Demo POC | `notebooks/7-deploy/` |
 
@@ -90,7 +101,7 @@ Intermediate datasets are persisted as `.parquet`; the fitted pipeline + model a
 
 Configs live in `.code_quality/`:
 
-- **ruff** (`ruff.toml`): line-length 100, target py3.10, notebooks included.
+- **ruff** (`ruff.toml`): line-length 100, target py3.14, notebooks included.
   Rules: B, C90, E, F, W, PL, I, S, UP, RUF, SIM, TRY
 - **mypy** (`mypy.ini`): strict — `disallow_untyped_defs`, `disallow_untyped_calls`,
   `check_untyped_defs`
@@ -100,5 +111,5 @@ detection, and conventional commits.
 
 ## Environment
 
-- Python **3.12** (pinned in `.python-version`)
+- Python **3.14** (pinned in `.python-version`)
 - **uv** for all dependency and venv management

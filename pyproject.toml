@@ -5,7 +5,7 @@ description = "Master's thesis project on Account Take Over (ATO) detection in a
 authors = [
     { name = "Sofia A", email = "sofiaarangopat@hotmail.com" },
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 readme = "README.md"
 license = { file = "LICENSE" }
 
