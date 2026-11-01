@@ -32,6 +32,14 @@ CHUNK_BYTES = 1 << 20
 MAX_COMPRESSION_RATIO = 200
 
 
+def _shown(path: Path) -> str:
+    """Path relative to the repository, so logs and notebook outputs never expose home folders."""
+    try:
+        return str(path.resolve().relative_to(find_repo_root()))
+    except ValueError, FileNotFoundError:
+        return path.name
+
+
 class IntegrityError(RuntimeError):
     """A downloaded file does not match its published checksum."""
 
@@ -64,9 +72,9 @@ def fetch(url: str, dest: Path, expected_md5: str, *, timeout: float = 60.0) -> 
     """
     if dest.is_file():
         if md5_of(dest) == expected_md5:
-            logger.info("Already downloaded and verified: %s", dest)
+            logger.info("Already downloaded and verified: %s", _shown(dest))
             return dest
-        logger.warning("Existing %s fails the checksum; downloading again", dest)
+        logger.warning("Existing %s fails the checksum; downloading again", _shown(dest))
     if not url.startswith("https://"):
         raise ValueError(f"Refusing non-https download: {url}")
 
@@ -87,7 +95,7 @@ def fetch(url: str, dest: Path, expected_md5: str, *, timeout: float = 60.0) -> 
         partial.unlink()
         raise IntegrityError(f"MD5 mismatch for {url}: expected {expected_md5}, got {actual}")
     partial.replace(dest)
-    logger.info("Downloaded and verified: %s (md5 %s)", dest, actual)
+    logger.info("Downloaded and verified: %s (md5 %s)", _shown(dest), actual)
     return dest
 
 
@@ -139,7 +147,7 @@ def extract_member(archive: Path, member: str, dest_dir: Path, max_uncompressed_
     info = check_archive(archive, member, max_uncompressed_bytes)
     target = dest_dir / PurePosixPath(member).name
     if target.is_file() and target.stat().st_size == info.file_size:
-        logger.info("Already extracted: %s", target)
+        logger.info("Already extracted: %s", _shown(target))
         return target
 
     partial = target.with_name(target.name + ".part")
@@ -156,7 +164,7 @@ def extract_member(archive: Path, member: str, dest_dir: Path, max_uncompressed_
             f"{member!r} yielded {written:,} bytes, header declares {info.file_size:,}"
         )
     partial.replace(target)
-    logger.info("Extracted %s (%s bytes)", target, f"{written:,}")
+    logger.info("Extracted %s (%s bytes)", _shown(target), f"{written:,}")
     return target
 
 
