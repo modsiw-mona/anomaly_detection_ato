@@ -1,4 +1,4 @@
-.PHONY: data notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
+.PHONY: data intermediate notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
 
 ####----Basic configurations----####
 
@@ -28,6 +28,10 @@ install_data_libs: ## Install pandas, scikit-learn, Jupyter, seaborn
 data: ## Download, verify and extract the raw dataset (DATASET=rba by default)
 	@echo "🚀 Downloading dataset $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m data.download --dataset $(or $(DATASET),rba)
+
+intermediate: ## Build data/02_intermediate/<dataset>.parquet from the raw file (DATASET=rba)
+	@echo "🚀 Building intermediate dataset $(or $(DATASET),rba)..."
+	PYTHONPATH=src uv run python -m data.intermediate --dataset $(or $(DATASET),rba)
 
 notebooks_run: ## Execute a notebook in place, e.g. make notebooks_run NB=notebooks/1-data/x.ipynb
 	@echo "🚀 Executing $(NB)..."

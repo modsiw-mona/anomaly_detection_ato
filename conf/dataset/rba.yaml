@@ -52,6 +52,19 @@ labels:
   label_ato: "Is Account Takeover"
   label_attack_ip: "Is Attack IP"
 
+# How raw values are read (measured on the full file in notebook 2).
+timestamp_format: "%Y-%m-%d %H:%M:%S%.f"   # e.g. 2020-02-03 12:43:30.772; single format, 23 chars
+
+# Values that mean "missing", declared per column. Never global: "Nan" is a real region
+# (Nan province, Thailand), and "unknown" is a real Device Type category.
+null_markers:
+  region: ["-"]
+  city: ["-"]
+
+# User IDs are 64-bit integer pseudonyms in this dataset.
+identifier_dtypes:
+  user_id: "Int64"
+
 # Placeholders the authors had to invent to resolve conflicts during synthesis (dataset README,
 # "Regarding the Data Values"). They are flagged, quantified and checked with an ablation — not
 # deleted. See docs/development-plan.md, section 4.4.

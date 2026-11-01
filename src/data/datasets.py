@@ -5,6 +5,7 @@ canonical schema in :mod:`data.schema`. It also records where the data comes fro
 it, how to cite it, and its known artefacts.
 """
 
+import ipaddress
 import re
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -12,7 +13,7 @@ from typing import Annotated, Literal, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
-from data.schema import FIELDS_BY_NAME, LABEL_FIELDS, check_requirements
+from data.schema import FIELDS_BY_NAME, LABEL_FIELDS, Kind, check_requirements
 
 _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -85,6 +86,19 @@ class Artefact(_Strict):
             raise ValueError(f"Unknown canonical field {value!r}")
         return value
 
+    @model_validator(mode="after")
+    def _value_matches_kind(self) -> Self:
+        if self.kind == "at_least" and not isinstance(self.value, int):
+            raise ValueError("'at_least' artefacts need an integer value")
+        if self.kind == "in_network":
+            if not isinstance(self.value, str):
+                raise ValueError("'in_network' artefacts need a network such as '10.0.0.0/8'")
+            ipaddress.IPv4Network(self.value)  # raises ValueError if invalid; IPv6 unsupported
+        return self
+
+
+IdentifierDtype = Literal["Int64", "String"]
+
 
 class DatasetConfig(_Strict):
     """Validated contents of one ``conf/dataset/<name>.yaml`` file."""
@@ -95,6 +109,17 @@ class DatasetConfig(_Strict):
     columns: dict[str, str] = Field(description="Canonical field -> column name in the dataset.")
     labels: dict[str, str] = Field(
         default_factory=dict, description="Canonical label field -> column name in the dataset."
+    )
+    timestamp_format: str = Field(
+        default="%Y-%m-%d %H:%M:%S%.f", description="strftime-style format of the timestamp column."
+    )
+    null_markers: dict[str, tuple[str, ...]] = Field(
+        default_factory=dict,
+        description="Canonical field -> raw values that mean 'missing' in that column only.",
+    )
+    identifier_dtypes: dict[str, IdentifierDtype] = Field(
+        default_factory=dict,
+        description="Storage type for identifier fields (default String).",
     )
     artefacts: tuple[Artefact, ...] = ()
 
@@ -107,6 +132,18 @@ class DatasetConfig(_Strict):
         if not_labels := self.labels.keys() - LABEL_FIELDS:
             raise ValueError(f"Not label fields: {sorted(not_labels)}")
         check_requirements(self.columns)
+        mapped = self.columns.keys() | self.labels.keys()
+        for setting, fields in (
+            ("null_markers", self.null_markers.keys()),
+            ("identifier_dtypes", self.identifier_dtypes.keys()),
+            ("artefacts", {artefact.field for artefact in self.artefacts}),
+        ):
+            if unmapped := set(fields) - mapped:
+                raise ValueError(f"{setting} refers to unmapped field(s): {sorted(unmapped)}")
+        if not_ids := {
+            f for f in self.identifier_dtypes if FIELDS_BY_NAME[f].kind is not Kind.IDENTIFIER
+        }:
+            raise ValueError(f"identifier_dtypes only applies to identifiers: {sorted(not_ids)}")
         return self
 
     def rename_map(self) -> dict[str, str]:
