@@ -36,12 +36,16 @@ repos:
           - --config
           - .code_quality/ruff.toml
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.0
+  # mypy runs from the project environment (uv) so it type-checks against the real
+  # installed libraries (polars, pydantic, ...) instead of treating them as `Any`.
+  - repo: local
     hooks:
       - id: mypy
-        args:
-          - --config-file=.code_quality/mypy.ini
+        name: mypy
+        entry: uv run --frozen mypy --config-file=.code_quality/mypy.ini
+        language: system
+        types: [python]
+        require_serial: true
 
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.17.0
