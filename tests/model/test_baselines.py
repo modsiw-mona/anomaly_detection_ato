@@ -49,3 +49,9 @@ def test_logistic_baseline_learns_a_real_signal(features: pl.DataFrame) -> None:
     assert scores.shape == (test.height,)
     chance = y.mean()  # the PR-AUC of a random score
     assert average_precision_score(y, scores) > LEARNT_OVER_CHANCE * chance, "signal not learnt"
+
+
+def test_training_sample_ignores_input_row_order(features: pl.DataFrame) -> None:
+    shuffled = features.sample(fraction=1.0, shuffle=True, seed=1)
+    assert not shuffled["event_id"].equals(features["event_id"]), "the shuffle must change order"
+    assert training_sample(shuffled).equals(training_sample(features))

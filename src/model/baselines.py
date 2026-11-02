@@ -21,7 +21,7 @@ import polars as pl
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-from data.features import LABEL, feature_columns
+from data.features import EVENT_ID, LABEL, feature_columns
 from model.preprocessing import build_preprocessor, to_model_frame
 
 FloatArray = np.typing.NDArray[np.float64]
@@ -44,7 +44,13 @@ def rule_scores(frame: pl.DataFrame) -> dict[str, FloatArray]:
 def training_sample(
     train: pl.DataFrame, *, negative_share: float = NEGATIVE_SHARE, seed: int = SEED
 ) -> pl.DataFrame:
-    """Every takeover plus a random ``negative_share`` of legitimate logins."""
+    """Every takeover plus a random ``negative_share`` of legitimate logins.
+
+    The seed picks row *positions*, so ``train`` is first put in a canonical order (by event id):
+    the same seed then picks the same logins whatever order the rows arrived in (polars joins and
+    group-bys do not guarantee row order).
+    """
+    train = train.sort(EVENT_ID)
     positives = train.filter(pl.col(LABEL))
     negatives = train.filter(~pl.col(LABEL)).sample(fraction=negative_share, seed=seed)
     return pl.concat([positives, negatives])
