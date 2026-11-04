@@ -200,7 +200,7 @@ def test_burst_counts_only_previous_full_hours() -> None:
         {"user_id": 1, "timestamp": at(0), "login_success": False},
         {"user_id": 2, "timestamp": at(30), "login_success": False},
         {"user_id": 3, "timestamp": at(65), "login_success": True},  # next hour
-        {"user_id": 4, "timestamp": at(70), "login_success": True},  # same hour as event 2
+        {"user_id": 4, "timestamp": at(70), "login_success": True},  # same hour as event 2 (01:00)
     ]
     frame = build_features(_events(rows), _config()).collect()
     assert frame["asn_attempts_prev24h"].to_list() == [2, 2], (

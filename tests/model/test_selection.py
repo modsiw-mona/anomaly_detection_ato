@@ -8,6 +8,7 @@ import numpy as np
 import polars as pl
 import pytest
 from sklearn.metrics import average_precision_score
+from sklearn.pipeline import Pipeline
 
 from data.features import DEFAULT_GROUPS, build_features, feature_columns
 from model.evaluation import assign_folds
@@ -114,6 +115,8 @@ def test_candidates_by_name() -> None:
         assert callable(candidate(name))
     with pytest.raises(KeyError):
         candidate("nope")
+    with pytest.raises(ValueError, match="balancing"):
+        candidate("PU bagging", balance_campaign=True)
 
 
 def test_group_metrics_compare_each_group_against_all_legitimate_logins() -> None:
@@ -166,3 +169,27 @@ def test_fitted_pipelines_survive_a_joblib_round_trip(
         joblib.dump(pipeline, path)
         reloaded = joblib.load(path)
         assert np.allclose(reloaded.predict_proba(x), pipeline.predict_proba(x)), name
+
+
+def test_campaign_weights_reach_the_model(
+    features: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, np.ndarray] = {}
+    original = Pipeline.fit
+
+    def spy(self: Pipeline, x: object, y: object = None, **params: object) -> Pipeline:
+        seen.update({k: np.asarray(v) for k, v in params.items()})
+        return original(self, x, y, **params)
+
+    monkeypatch.setattr(Pipeline, "fit", spy)
+    frame = features.with_columns(
+        pl.when(pl.col("label_ato") & (pl.col("device_type") == "mobile"))
+        .then(pl.lit("RO"))
+        .otherwise(pl.col("country").cast(pl.String))
+        .alias("country")
+    )
+    train_supervised(
+        "random forest", frame, feature_columns(), balance_campaign=True, negative_share=0.5
+    )
+    assert "model__sample_weight" in seen, "weights are passed to the model"
+    assert not np.allclose(seen["model__sample_weight"], 1.0), "and they are not all 1"

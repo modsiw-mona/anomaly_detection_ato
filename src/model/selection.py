@@ -159,10 +159,11 @@ def campaign_weights(sample: pl.DataFrame, group: str = CAMPAIGN_GROUP) -> Float
     if not y.any():
         return weights
     values, counts = np.unique(groups[y], return_counts=True)
+    if values.size < 2:  # noqa: PLR2004 — a single group: nothing to balance
+        return weights
     dominant = groups == values[np.argmax(counts)]
     for members in (y & dominant, y & ~dominant):
-        if members.any():
-            weights[members] = (y.sum() / 2) / members.sum()
+        weights[members] = (y.sum() / 2) / members.sum()
     return weights
 
 
@@ -253,6 +254,8 @@ def candidate(name: str, *, balance_campaign: bool = False) -> Fitter:
         return lambda train, columns: fit_supervised(
             name, train, columns, balance_campaign=balance_campaign
         )
+    if balance_campaign:
+        raise ValueError(f"campaign balancing is only implemented for {sorted(SUPERVISED)}")
     if name == "PU bagging":
         return fit_pu_bagging
     if name == "isolation forest":
