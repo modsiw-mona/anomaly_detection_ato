@@ -1,7 +1,7 @@
 # Dataset card — Login Data Set for Risk-Based Authentication (`rba`)
 
-> Translation file: [`conf/dataset/rba.yaml`](../../conf/dataset/rba.yaml) ·
-> First look: [`notebooks/1-data/01-sap-data_download-2026_10_31.ipynb`](../../notebooks/1-data/01-sap-data_download-2026_10_31.ipynb)
+> Translation file: [`conf/dataset/rba.yaml`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/conf/dataset/rba.yaml) ·
+> First look: [`notebooks/1-data/01-sap-data_download-2026_10_31.ipynb`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/1-data/01-sap-data_download-2026_10_31.ipynb)
 
 ## At a glance
 
