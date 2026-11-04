@@ -213,11 +213,15 @@ The course #6 minimum of 4 model types is covered.
   New signals are derived from the data itself (e.g. country change within an hour, accounts per
   network in a window).
 
-**Outcome of issue #6 (2026-11-03):** **LightGBM with the `campaign` and `travel` features** is selected
-(mean PR-AUC 0.444 over 15 folds vs 0.043 for the logistic regression; recall 80% at a 0.1% budget, 90% at 1%),
-statistically tied with two random-forest variants. The Romania campaign is still detected when hidden from
-training; the other takeovers generalise much less (PR-AUC 0.10 → 0.01 when hidden). Notebook
-`5-models/06-sap-model_selection-2026_11_03.ipynb`; model in `data/06_models/` (gitignored).
+**Outcome of issue #6 (2026-11-04):** the **random forest with leaf size 2, the `campaign` and `travel`
+features and campaign balancing** is selected (mean PR-AUC 0.448 over 15 folds vs 0.043 for the logistic
+regression; recall 81% at a 0.1% budget, 89% at 1%; best of all finalists on the non-Romania takeovers). In a
+paired comparison on the same 15 folds it ties with LightGBM on the same features and beats the default forest
+and LightGBM without the new features. The Romania campaign is still caught when hidden from training (95% at 1%);
+the other takeovers generalise much less (PR-AUC ~0.1 → ~0.01 when hidden). The first run of the selection had a
+preprocessing bug (unseen networks imputed as clean), found by the independent review of PR #24 and fixed before
+this result. Notebook `5-models/06-sap-model_selection-2026_11_03.ipynb`; model in `data/06_models/`
+(gitignored).
 
 ### 5.5 Methods updated since the anteproyecto's sources
 
