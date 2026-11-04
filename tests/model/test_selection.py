@@ -1,14 +1,17 @@
 """Tests for model selection: out-of-fold scoring, leave-group-out and the candidates."""
 
 from collections.abc import Sequence
+from pathlib import Path
 
+import joblib
 import numpy as np
 import polars as pl
 import pytest
 from sklearn.metrics import average_precision_score
 
-from data.features import build_features, feature_columns
+from data.features import DEFAULT_GROUPS, build_features, feature_columns
 from model.evaluation import assign_folds
+from model.preprocessing import to_model_frame
 from model.selection import (
     SUPERVISED,
     Scorer,
@@ -20,6 +23,7 @@ from model.selection import (
     fold_per_login,
     group_metrics,
     out_of_fold,
+    train_supervised,
 )
 from tests.data.test_features import _config, _events, _random_events
 
@@ -149,3 +153,16 @@ def test_campaign_balanced_training_learns(features: pl.DataFrame, fold: np.ndar
     scores = out_of_fold(frame, fold, fit, feature_columns())
     y = frame["label_ato"].to_numpy()
     assert average_precision_score(y, scores) > LEARNT_OVER_CHANCE * y.mean()
+
+
+def test_fitted_pipelines_survive_a_joblib_round_trip(
+    features: pl.DataFrame, tmp_path: Path
+) -> None:
+    columns = feature_columns((*DEFAULT_GROUPS, "campaign", "travel"))
+    x = to_model_frame(features, columns)
+    for name in SUPERVISED:
+        pipeline = train_supervised(name, features, columns, negative_share=NEGATIVE_SHARE)
+        path = tmp_path / f"{name}.joblib"
+        joblib.dump(pipeline, path)
+        reloaded = joblib.load(path)
+        assert np.allclose(reloaded.predict_proba(x), pipeline.predict_proba(x)), name

@@ -45,15 +45,20 @@ def _log_share(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     return np.log(np.maximum(x, SHARE_FLOOR))
 
 
+def _cyclic_encode(x: npt.NDArray[np.float64], period: int) -> npt.NDArray[np.float64]:
+    angle = 2 * np.pi * np.asarray(x, dtype=float) / period
+    return np.hstack([np.sin(angle), np.cos(angle)])
+
+
+def _cyclic_names(_transformer: object, columns: Sequence[str]) -> list[str]:
+    return [f"{c}_{fn}" for fn in ("sin", "cos") for c in columns]
+
+
 def _cyclic(period: int) -> FunctionTransformer:
-    def encode(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        angle = 2 * np.pi * np.asarray(x, dtype=float) / period
-        return np.hstack([np.sin(angle), np.cos(angle)])
-
-    def names(_transformer: object, columns: Sequence[str]) -> list[str]:
-        return [f"{c}_{fn}" for fn in ("sin", "cos") for c in columns]
-
-    return FunctionTransformer(encode, feature_names_out=names)
+    # Module-level functions (not closures) so the fitted pipeline can be saved with joblib/pickle.
+    return FunctionTransformer(
+        _cyclic_encode, kw_args={"period": period}, feature_names_out=_cyclic_names
+    )
 
 
 def to_model_frame(features: pl.DataFrame, columns: Sequence[str]) -> pl.DataFrame:
