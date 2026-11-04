@@ -12,10 +12,13 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 - **Output:** the takeover score, how it ranks among development logins, the **response tier** with the thresholds
   of issue #7 (top 1% → step-up, top 0.1% → review / block), and **why**: tree SHAP contributions relative to a
   typical login (300 ordinary test logins), so "raises" means "riskier than a typical login".
-- **What if…:** switch one behavioural signal (new country / network / device, attack-IP address, country change
-  within an hour) and the login is re-scored on the spot; the other features stay as they were (the count of new
-  key signals is updated). Signals that need earlier logins are locked on an account's first login, and whether a
-  login is the first is shown but cannot be changed.
+- **Behaviour signals — what if…:** switches show the behaviour signals of the login (on = the signal is
+  present: new country / network / device for the account, attack-listed IP, country change within an hour).
+  Switch one and the login is re-scored on the spot; the other features stay as they were (the count of new key
+  signals is updated). On an account's **first** login there is no history to compare with, so the
+  account-history signals do not apply: the demo says so and shows only the attack-IP switch.
+- **Plain-language names:** every input on screen is shown by what it means (e.g. "Share of all earlier logins
+  from this country"); the login id is shown for reference only and is not a model input.
 
 **Why not a form or a CSV upload?** The course's reference demo scores one row typed in a form, or a batch from a
 CSV. Here a login's features describe it *against the account's history and all earlier traffic* (novelty, rarity,
