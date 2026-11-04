@@ -63,6 +63,32 @@ Template for notebooks                       | [Notebook template] |
     make install_data_libs
     ```
 
+## 🔐 Demo — account-takeover risk (issue #8)
+
+A local [Streamlit](https://streamlit.io/) app scores a login with the selected model and shows the response tier
+(allow / step-up / review-block) and the inputs behind the score. It runs only on your machine
+(`127.0.0.1`), with Streamlit's usage statistics turned off (`.streamlit/config.toml`).
+
+1. Build the data and the model once (each step is idempotent; the notebooks take ~70 and ~2 minutes):
+
+    ```bash
+    make data intermediate features split
+    make notebooks_run NB=notebooks/5-models/06-sap-model_selection-2026_11_03.ipynb
+    make notebooks_run NB=notebooks/6-interpretation/07-sap-model_interpretation-2026_11_04.ipynb
+    ```
+
+1. Start the demo and open <http://127.0.0.1:8501>:
+
+    ```bash
+    make demo
+    ```
+
+Pick a kind of example in the sidebar (a takeover sent to review, one caught by step-up, a false alarm, an ordinary
+login), then switch the *What if…* signals to see the score and the response change. `?example=<i>&n=<k>` in the URL
+opens a given example. Screenshots and details: [`notebooks/7-deploy/`](notebooks/7-deploy/README.md).
+
+![Demo: a takeover sent to review](notebooks/7-deploy/screenshots/01-takeover-review.png)
+
 ## Install dependencies
 
 After init the environment to install a new package, run:

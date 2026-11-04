@@ -1,4 +1,4 @@
-.PHONY: data intermediate features split notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
+.PHONY: data intermediate features split demo notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
 
 ####----Basic configurations----####
 
@@ -40,6 +40,9 @@ features: ## Build data/04_feature/<dataset>_features.parquet from the intermedi
 split: ## Assign users to dev/test (grouped by user, stratified by label) (DATASET=rba)
 	@echo "🚀 Splitting $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m data.split --dataset $(or $(DATASET),rba)
+
+demo: ## Run the Streamlit risk demo (needs the model from notebooks 06 and 07)
+	PYTHONPATH=src uv run streamlit run notebooks/7-deploy/app.py
 
 notebooks_run: ## Execute a notebook in place, e.g. make notebooks_run NB=notebooks/1-data/x.ipynb
 	@echo "🚀 Executing $(NB)..."
