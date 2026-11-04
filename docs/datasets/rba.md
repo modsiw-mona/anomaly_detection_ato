@@ -25,7 +25,7 @@ Service. *ACM Transactions on Privacy and Security*, 26(1). https://doi.org/10.1
 It is the only public dataset whose unit of analysis is a **consumer login event** and that carries
 **confirmed account-takeover labels**. The thesis literature on risk-based authentication (Freeman
 et al., 2016; Wiefling et al., 2021–2022) was built on it, and later detection work uses it too.
-Alternatives were considered and rejected (development plan, 2026-10-21): LANL `cyber1` (enterprise
+Alternatives were considered and rejected: LANL `cyber1` (enterprise
 lateral movement), CERT insider threat (malicious *legitimate* users), and IEEE-CIS (transactions,
 no authentication records).
 
@@ -78,9 +78,9 @@ Statements from the dataset authors' README ("Data Creation"), not our assumptio
 | Device type | Identical to the real data | Use |
 | User agent, OS, browser | Relations identical, values regenerated | Use |
 | IP, ASN, country | Frequencies identical, values synthetic | Use through behaviour features (new for this user, rarity, accounts sharing it) |
-| City, region | Real relations not preserved | Included and **tested with an ablation** — not dropped untested |
+| City, region | Real relations not preserved | Used as novelty flags; an ablation (issue #6) shows no measurable effect |
 | Timestamps | Order kept, noise added | Use; temporal features tested |
-| RTT | Realistic per location, reassigned | Included and **tested with an ablation** |
+| RTT | Realistic per location, reassigned | Not used: an ablation (issue #6) shows it adds nothing |
 
 ## Labels
 
@@ -90,8 +90,9 @@ Statements from the dataset authors' README ("Data Creation"), not our assumptio
   The companion paper reports *"87 successful logins were detected as account takeover"* (§4.1) for
   the original data, and does not describe how the label was carried into the synthesised release.
   The difference is **unexplained by the authors**; the published file is the source of truth for
-  this project, and the discrepancy is reported as a limitation. True means *confirmed*; false means *not flagged*, which is not the same as legitimate. This
-  is a **positive-unlabelled (PU)** label, so precision is reported as a lower bound.
+  this project, and the discrepancy is reported as a limitation. True means *confirmed*; false means
+  *not flagged*, which is not the same as legitimate. This is a **positive-unlabelled (PU)** label, so
+  precision is reported as a lower bound.
 - **`Is Attack IP`**: the IP appears in the FireHOL attacker lists, matched against the original
   data. It marks *attack attempts*, mostly failed, not confirmed takeovers. It is never the modelling
   target. Successful logins with an attack IP but no takeover flag are candidate missed takeovers.
@@ -110,7 +111,7 @@ According to the authors, these values do not affect Freeman RBA scores, since t
 frequencies only. Placeholder IPs look more frequent in failed logins than in successful ones, but
 that is **confounded by a catch-all user ID** (see *Data quality findings* in the EDA, issue #3):
 among real accounts the relation reverses (10.8% of failed vs 15.3% of successful logins). Issue #3
-measures the link with the labels, and an ablation in issue #6 checks the effect.
+measures the link with the labels; an ablation in issue #6 shows the flags add nothing to the model.
 
 ## Intermediate dataset (`data/02_intermediate/rba.parquet`)
 
@@ -188,7 +189,7 @@ all 31.3 M rows in ~4 s, with one expected warning: the takeover on a failed log
 - **Labels cover February – November 2020 only** (see *Data quality findings*).
 - **One campaign is most of the labels:** 56% of takeover rows come from one country (`RO`), so a
   model can score well by recognising that campaign alone; results are reported per group, with a
-  leave-campaign-out test (development plan, section 5.4).
+  leave-campaign-out test (notebook `5-models/06-sap-model_selection-2026_11_03.ipynb`).
 - **Weakened signals:** RTT and fine-grained geography were partly randomised during synthesis, and
   RTT is missing for 96% of attempts.
 - **A catch-all user ID:** one ID holds 14 M failed attempts (45% of all rows) from 227 countries;

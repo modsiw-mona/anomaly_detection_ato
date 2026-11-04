@@ -12,7 +12,7 @@ Scaffolded from [JoseRZapata/data-science-project-template](https://github.com/J
 
 Using the data science project template <https://github.com/JoseRZapata/data-science-project-template>
 
-## ✨ Features and Tools
+## Features and Tools
 
 Information about all the features and tools used in this project: <https://joserzapata.github.io/data-science-project-template/#features-and-tools>
 
@@ -63,7 +63,7 @@ Template for notebooks                       | [Notebook template] |
     make install_data_libs
     ```
 
-## 🔐 Demo — account-takeover risk (issue #8)
+## Demo — account-takeover risk (issue #8)
 
 A local [Streamlit](https://streamlit.io/) app scores a login with the selected model and shows the response tier
 (allow / step-up / review-block) and the inputs behind the score. It runs only on your machine
@@ -104,7 +104,7 @@ Example to install [plotly](https://plotly.com/python/) in dev group:
 uv add --group dev plotly
 ```
 
-## 🗃️ Project structure
+## Project structure
 
 - [Data structure]
 - [Pipelines based on Feature/Training/Inference Pipelines](https://www.hopsworks.ai/post/mlops-to-ml-systems-with-fti-pipelines)

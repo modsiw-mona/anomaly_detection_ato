@@ -1,4 +1,4 @@
-"""Development / test split, decided by the rule fixed in the development plan (section 5.2).
+"""Development / test split, by a rule fixed before looking at any result.
 
 The EDA (issue #3) applied the pre-registered rule: the last 20% of the timeline holds no takeover,
 so the final test set is a **random 20% of users**:

@@ -29,11 +29,7 @@ from inference.predict import ALLOW, Detector, format_value  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("ATO_DATA_DIR", REPO_ROOT / "data"))
 DATASET = os.environ.get("ATO_DATASET", "rba")
-TIER_STYLE = {
-    "review / block": ("🛑", "error"),
-    "step-up": ("🔐", "warning"),
-    ALLOW: ("✅", "success"),
-}
+TIER_STYLE = {"review / block": "error", "step-up": "warning", ALLOW: "success"}
 HISTORY_SIGNALS = {
     "new_country",
     "new_asn",
@@ -187,7 +183,7 @@ def risk_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None
     toggled = [c for c in WHAT_IF if c in login.columns and bool(edited[c][0]) != bool(login[c][0])]
     changed = bool(toggled)
     tier = det.tier(score)
-    icon, style = TIER_STYLE[tier]
+    style = TIER_STYLE[tier]
     st.subheader("Risk")
     st.metric(
         "Takeover score",
@@ -198,7 +194,7 @@ def risk_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None
     rank = det.riskier_than(score)
     rank_text = "more than 99.99%" if rank > 0.9999 else f"{rank:.2%}"  # noqa: PLR2004
     st.caption(f"Riskier than **{rank_text}** of development logins.")
-    getattr(st, style)(f"{icon} Response: **{tier}**")
+    getattr(st, style)(f"Response: **{tier}**", icon=None)
     st.subheader("Why")
     everything = det.explain(edited, top=len(det.columns) * 3)[0]  # every input, by |contribution|
     changed_inputs = everything.filter(
@@ -224,7 +220,7 @@ def risk_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None
 
 
 def main() -> None:
-    st.set_page_config(page_title="ATO risk demo", page_icon="🔐", layout="wide")
+    st.set_page_config(page_title="ATO risk demo", layout="wide")
     st.title("Account-takeover risk — demo")
     st.caption(
         "Proof of concept for the thesis *Detección de Account Takeover mediante identificación automática de "
