@@ -12,6 +12,7 @@ from model.evaluation import assign_folds
 from model.selection import (
     SUPERVISED,
     Scorer,
+    campaign_weights,
     candidate,
     fit_isolation_forest,
     fit_pu_bagging,
@@ -119,3 +120,32 @@ def test_group_metrics_compare_each_group_against_all_legitimate_logins() -> Non
     assert result["first"]["pr_auc"] == 1.0, "the first takeover outranks every legitimate login"
     assert result["first"]["prevalence"] == pytest.approx(1 / 5)
     assert result["all"]["prevalence"] == pytest.approx(2 / 6)
+
+
+def test_campaign_weights_balance_the_dominant_group_against_the_rest() -> None:
+    sample = pl.DataFrame(
+        {
+            "label_ato": [True, True, True, True, False, False],
+            "country": ["RO", "RO", "RO", "NO", "NO", "RO"],
+        }
+    )
+    w = campaign_weights(sample)
+    assert w[:3].sum() == pytest.approx(w[3]), "RO takeovers weigh as much as all the others"
+    assert w[:4].sum() == pytest.approx(4), "takeovers keep their total weight"
+    assert (w[4:] == 1).all(), "legitimate logins are untouched"
+    assert (
+        campaign_weights(sample.with_columns(pl.lit(value=False).alias("label_ato"))) == 1
+    ).all()
+
+
+def test_campaign_balanced_training_learns(features: pl.DataFrame, fold: np.ndarray) -> None:
+    frame = features.with_columns(pl.col("country").cast(pl.String))
+
+    def fit(train: pl.DataFrame, columns: Sequence[str]) -> Scorer:
+        return fit_supervised(
+            "random forest", train, columns, balance_campaign=True, negative_share=NEGATIVE_SHARE
+        )
+
+    scores = out_of_fold(frame, fold, fit, feature_columns())
+    y = frame["label_ato"].to_numpy()
+    assert average_precision_score(y, scores) > LEARNT_OVER_CHANCE * y.mean()

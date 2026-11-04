@@ -14,6 +14,9 @@ evaluated on complete, unsampled folds.
   takeovers were never detected), and bagging over the unlabelled side is the standard remedy
   (Bekker & Davis, 2020).
 
+**Campaign balancing.** :func:`campaign_weights` gives the dominant campaign and all other takeovers
+the same total weight in training.
+
 **Per-group evaluation.** One campaign dominates the labels (dataset card: 56% of takeover rows come
 from country ``RO``), so metrics are also reported for each group of takeovers against all
 legitimate logins, and :func:`out_of_fold` can **hide** a group from training (leave-campaign-out):
@@ -42,6 +45,9 @@ IntArray = npt.NDArray[np.int64]
 Scorer = Callable[[pl.DataFrame], FloatArray]
 UNSUPERVISED_SAMPLE = 500_000  # logins used to fit Isolation Forest
 PU_BAGS = 10
+CAMPAIGN_GROUP = (
+    "country"  # context column that identifies a campaign (data.features.CONTEXT_COLUMNS)
+)
 
 
 def _pipeline(columns: Sequence[str], model: object) -> Pipeline:
@@ -127,7 +133,7 @@ SUPERVISED: dict[str, Callable[[Sequence[str], int], Pipeline]] = {
 }
 
 
-def _score_with(pipeline: Pipeline, columns: Sequence[str]) -> Scorer:
+def score_with(pipeline: Pipeline, columns: Sequence[str]) -> Scorer:
     def score(frame: pl.DataFrame) -> FloatArray:
         x = to_model_frame(frame, columns)
         if hasattr(pipeline, "predict_proba"):
@@ -139,19 +145,63 @@ def _score_with(pipeline: Pipeline, columns: Sequence[str]) -> Scorer:
     return score
 
 
-def fit_supervised(
+def campaign_weights(sample: pl.DataFrame, group: str = CAMPAIGN_GROUP) -> FloatArray:
+    """Sample weights that stop one campaign from drowning out every other takeover.
+
+    The takeovers of the **dominant group** (the ``group`` value with the most takeovers in the
+    training sample, e.g. country ``RO``) and all other takeovers each get half of the takeovers'
+    total weight; legitimate logins keep weight 1. Without it, the RO campaign (56% of takeover rows)
+    dominates training: hiding it from training *doubled* the PR-AUC on the other takeovers.
+    """
+    y = sample[LABEL].to_numpy()
+    weights = np.ones(sample.height)
+    groups = sample[group].cast(pl.String).fill_null("").to_numpy()
+    if not y.any():
+        return weights
+    values, counts = np.unique(groups[y], return_counts=True)
+    dominant = groups == values[np.argmax(counts)]
+    for members in (y & dominant, y & ~dominant):
+        if members.any():
+            weights[members] = (y.sum() / 2) / members.sum()
+    return weights
+
+
+def train_supervised(  # noqa: PLR0913 — the knobs of one training run
     name: str,
     train: pl.DataFrame,
     columns: Sequence[str],
     *,
+    balance_campaign: bool = False,
+    negative_share: float = NEGATIVE_SHARE,
+    seed: int = SEED,
+) -> Pipeline:
+    """Fitted pipeline of one supervised candidate: every takeover + a sample of legitimate logins."""
+    sample = training_sample(train, negative_share=negative_share, seed=seed)
+    pipeline = SUPERVISED[name](columns, seed)
+    fit_params = {"model__sample_weight": campaign_weights(sample)} if balance_campaign else {}
+    pipeline.fit(to_model_frame(sample, columns), sample[LABEL].to_numpy(), **fit_params)
+    return pipeline
+
+
+def fit_supervised(  # noqa: PLR0913
+    name: str,
+    train: pl.DataFrame,
+    columns: Sequence[str],
+    *,
+    balance_campaign: bool = False,
     negative_share: float = NEGATIVE_SHARE,
     seed: int = SEED,
 ) -> Scorer:
-    """Fit one supervised candidate on every takeover + a sample of legitimate logins."""
-    sample = training_sample(train, negative_share=negative_share, seed=seed)
-    pipeline = SUPERVISED[name](columns, seed)
-    pipeline.fit(to_model_frame(sample, columns), sample[LABEL].to_numpy())
-    return _score_with(pipeline, columns)
+    """Scorer of :func:`train_supervised`."""
+    pipeline = train_supervised(
+        name,
+        train,
+        columns,
+        balance_campaign=balance_campaign,
+        negative_share=negative_share,
+        seed=seed,
+    )
+    return score_with(pipeline, columns)
 
 
 def fit_pu_bagging(
@@ -197,10 +247,12 @@ def fit_isolation_forest(
 Fitter = Callable[[pl.DataFrame, Sequence[str]], Scorer]
 
 
-def candidate(name: str) -> Fitter:
+def candidate(name: str, *, balance_campaign: bool = False) -> Fitter:
     """Fitting function of a candidate by name (supervised, ``PU bagging`` or ``isolation forest``)."""
     if name in SUPERVISED:
-        return lambda train, columns: fit_supervised(name, train, columns)
+        return lambda train, columns: fit_supervised(
+            name, train, columns, balance_campaign=balance_campaign
+        )
     if name == "PU bagging":
         return fit_pu_bagging
     if name == "isolation forest":

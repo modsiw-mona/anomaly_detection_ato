@@ -80,6 +80,8 @@ DEFAULT_GROUPS = (
     "missingness", "device", "time",
 )  # fmt: skip
 ID_COLUMNS = (EVENT_ID, USER, TIME)
+# Carried along for analysis (per-campaign evaluation, error analysis, the demo), never a model input
+CONTEXT_COLUMNS = ("country",)
 
 
 def feature_columns(groups: tuple[str, ...] = DEFAULT_GROUPS) -> list[str]:
@@ -251,7 +253,8 @@ def build_features(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.Lazy
         frame = frame.filter((pl.col(TIME) >= start) & (pl.col(TIME) < end))
 
     present = [c for c in feature_columns(tuple(FEATURE_GROUPS)) if c in frame.collect_schema()]
-    return frame.select(*ID_COLUMNS, LABEL, *present).sort(TIME, EVENT_ID)
+    context_present = [c for c in CONTEXT_COLUMNS if c in available]
+    return frame.select(*ID_COLUMNS, *context_present, LABEL, *present).sort(TIME, EVENT_ID)
 
 
 def features_path(config: DatasetConfig, data_dir: Path) -> Path:

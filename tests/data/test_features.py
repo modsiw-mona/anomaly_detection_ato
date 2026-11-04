@@ -177,6 +177,12 @@ def test_feature_groups() -> None:
     assert not set(FEATURE_GROUPS["artefacts"]) & set(columns), "artefacts only behind ablations"
     assert not set(FEATURE_GROUPS["rtt"]) & set(columns), "RTT only behind ablations"
     assert set(DEFAULT_GROUPS) <= FEATURE_GROUPS.keys()
+    assert "country" not in feature_columns(tuple(FEATURE_GROUPS)), "context, never a model input"
+
+
+def test_country_is_carried_as_context(hand_built: pl.DataFrame) -> None:
+    takeover = hand_built.filter(pl.col("event_id") == TAKEOVER).row(0, named=True)
+    assert takeover["country"] == "SE"
 
 
 def test_network_reputation_counts_every_earlier_attempt(hand_built: pl.DataFrame) -> None:
