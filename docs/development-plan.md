@@ -193,9 +193,14 @@ The course #6 minimum of 4 model types is covered.
 - **No SMOTE and no invented takeovers for training.** Interpolating between ~100 takeovers produces
   logins that do not exist, and current evidence shows no gain for strong classifiers (section 5.5).
   The anteproyecto cites SMOTE only in its literature review; the thesis says why it is not used.
-- **Gradient boosting uses scikit-learn's `HistGradientBoostingClassifier`.** LightGBM 4.7 and
-  XGBoost 3.4 need a system OpenMP library on macOS (`brew install libomp`); the scikit-learn
-  implementation is the same algorithm family with no system dependency.
+- **Gradient boosting in three implementations:** scikit-learn's `HistGradientBoostingClassifier`,
+  LightGBM 4.7 and XGBoost 3.4. The last two need LLVM's OpenMP runtime on macOS (`brew install libomp`,
+  checked: official Homebrew formula, no known CVEs; documented in the README); on Linux, XGBoost uses its
+  official CPU-only build so CI does not download GPU libraries.
+- **Identity encodings are not tested as features** (deferred, deliberately): encoding *which* country or
+  ASN a login comes from would let a model learn "country = RO", i.e. memorise the dominant campaign — exactly
+  what the leave-campaign-out test guards against. Countries and networks enter only through behaviour
+  (novelty, rarity, reputation). Freeman's score, from issue #5, stays a reference row (PR-AUC 0.0002).
 - **The Romania campaign is evaluated separately.** 79 of the 141 takeovers (78 users, Feb–Nov 2020)
   come from one country, RO. Every model reports results on the RO takeovers and on the others, and a
   **leave-campaign-out** test trains without one group and measures detection of it: a model that
