@@ -163,6 +163,12 @@ Measured in notebook `3-analysis`:
 - **Failed attempts just before a takeover are barely more frequent** than before a legitimate
   login (×1.1–1.2).
 - **RTT is present for 1 of 140 takeovers.**
+- **One campaign dominates the labels** (found in issue #6): 79 of the 141 takeover rows (78 users,
+  February – November 2020) come from country `RO`, which has only 11,358 successful logins in the
+  whole file: a login from `RO` is a takeover ~600 times more often than average (0.7% vs 0.0011%).
+  On the development side, 41 of its 62 takeovers use one identical user-agent string and 81% come
+  from attack IPs. The companion paper notes the same: most identified attacks came "from a
+  particular ASN and a country that was far from the online service's main country" (§5).
 
 **Validation rules** (`src/data/validation.py` + `validation` in `conf/dataset/rba.yaml`) pass on
 all 31.3 M rows in ~4 s, with one expected warning: the takeover on a failed login.
@@ -180,6 +186,9 @@ all 31.3 M rows in ~4 s, with one expected warning: the takeover on a failed log
 - **Unexplained label count:** 140 takeover rows on successful logins versus 87 in the paper (see
   *Labels*).
 - **Labels cover February – November 2020 only** (see *Data quality findings*).
+- **One campaign is most of the labels:** 56% of takeover rows come from one country (`RO`), so a
+  model can score well by recognising that campaign alone; results are reported per group, with a
+  leave-campaign-out test (development plan, section 5.4).
 - **Weakened signals:** RTT and fine-grained geography were partly randomised during synthesis, and
   RTT is missing for 96% of attempts.
 - **A catch-all user ID:** one ID holds 14 M failed attempts (45% of all rows) from 227 countries;
