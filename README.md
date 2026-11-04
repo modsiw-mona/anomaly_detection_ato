@@ -86,9 +86,9 @@ A local [Streamlit](https://streamlit.io/) app scores a login with the selected 
 
 Pick a kind of example in the sidebar (a takeover sent to review, one caught by step-up, a false alarm, an ordinary
 login), then switch a *What if…* signal to see the score and the response change. `?example=<review|step-up|false-alarm|ordinary>&n=<k>`
-in the URL opens a given example. Screenshots and details: [`notebooks/7-deploy/`](notebooks/7-deploy/README.md).
+in the URL opens a given example. Screenshots and details: [`notebooks/7-deploy/`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/7-deploy/README.md).
 
-![Demo: a takeover sent to review](notebooks/7-deploy/screenshots/01-takeover-review.png)
+![Demo: a takeover sent to review](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/01-takeover-review.png)
 
 ## Install dependencies
 
