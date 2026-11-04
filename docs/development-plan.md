@@ -223,6 +223,13 @@ preprocessing bug (unseen networks imputed as clean), found by the independent r
 this result. Notebook `5-models/06-sap-model_selection-2026_11_03.ipynb`; model in `data/06_models/`
 (gitignored).
 
+**Outcome of issue #7 (2026-11-04):** on the test side (20% of users, 28 takeovers) the selected model reaches
+PR-AUC **0.62** [0.45–0.78], with **86%** of takeovers in the top 0.1% of logins and **100%** in the top 1%.
+Thresholds fixed on development scores flag 0.09% (review / block) and 0.95% (step-up) of test logins: 76 and 668
+false alarms per takeover caught. Misses at the strict tier are first logins and one attacker login following an
+earlier attacker login. An earlier run with the issue #6 preprocessing bug gave PR-AUC 0.606. Notebook
+`6-interpretation/07-sap-model_interpretation-2026_11_04.ipynb`; charts and metrics in `data/08_reporting/`.
+
 ### 5.5 Methods updated since the anteproyecto's sources
 
 | Topic | Current practice | Source |
