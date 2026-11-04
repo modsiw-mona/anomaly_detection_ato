@@ -20,6 +20,14 @@ Feature groups (see :data:`FEATURE_GROUPS`), each motivated by the EDA (notebook
 * ``attack_ip``, ``missingness``, ``device``, ``time`` — context of the attempt.
 * ``artefacts`` (placeholder flags) and ``rtt`` — kept for ablations only (EDA: artefacts of the
   synthesis; RTT present for one takeover).
+* ``campaign`` (issue #6, takeover profile) — signals of attacker *infrastructure* shared across
+  accounts: share of earlier attempts from this ASN / IP that failed or came from an attack IP, the
+  attempts and failures from this ASN in the previous 24 full hours, and how many accounts used this
+  exact user agent before. Network statistics count **every** attempt, the catch-all ID included:
+  its failed attempts are attack traffic too.
+* ``travel`` (issue #6) — a country change less than an hour after the previous successful login
+  (an "impossible travel" proxy without coordinates), and how many distinct countries the user had
+  succeeded from before.
 """
 
 import argparse
@@ -35,6 +43,7 @@ from data.intermediate import EVENT_ID, intermediate_path, mapped_fields
 logger = logging.getLogger(__name__)
 
 USER, TIME, SUCCESS, LABEL = "user_id", "timestamp", "login_success", "label_ato"
+ATTACK_FLAG = "label_attack_ip"
 NOVELTY_SIGNALS = (
     "country", "asn", "ip", "device_type", "os", "browser", "user_agent", "region", "city",
 )  # fmt: skip
@@ -42,6 +51,9 @@ KEY_SIGNALS = ("country", "asn", "device_type", "os", "browser")  # EDA: stronge
 RARITY_SIGNALS = ("country", "asn", "ip", "device_type", "os", "browser", "user_agent")
 SHARING_SIGNALS = ("ip", "asn")
 FAILURE_WINDOWS = {"1h": "fails_1h", "24h": "fails_24h"}
+NETWORK_SIGNALS = ("asn", "ip")  # reputation from all earlier attempts
+BURST_SIGNAL, BURST_WINDOW = "asn", "24h"
+TRAVEL_WINDOW_HOURS = 1.0
 
 FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
     "history": ("prior_successes", "first_success", "hours_since_prev_success"),
@@ -55,12 +67,21 @@ FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
     "time": ("hour", "weekday"),
     "artefacts": ("ip_is_placeholder", "asn_is_placeholder"),
     "rtt": ("rtt_ms", "rtt_missing"),
+    "campaign": (
+        *(f"{s}_prior_{k}_share" for s in NETWORK_SIGNALS for k in ("fail", "attack")),
+        f"{BURST_SIGNAL}_attempts_prev24h",
+        f"{BURST_SIGNAL}_fails_prev24h",
+        "user_agent_prior_users",
+    ),
+    "travel": ("country_change_1h", "user_prior_countries"),
 }
 DEFAULT_GROUPS = (
     "history", "user_novelty", "global_rarity", "sharing", "failures", "attack_ip",
     "missingness", "device", "time",
 )  # fmt: skip
 ID_COLUMNS = (EVENT_ID, USER, TIME)
+# Carried along for analysis (per-campaign evaluation, error analysis, the demo), never a model input
+CONTEXT_COLUMNS = ("country",)
 
 
 def feature_columns(groups: tuple[str, ...] = DEFAULT_GROUPS) -> list[str]:
@@ -116,6 +137,21 @@ def _user_features(successes: pl.LazyFrame, available: set[str]) -> pl.LazyFrame
         ((pl.col(TIME) - previous).dt.total_seconds() / 3600).alias("hours_since_prev_success"),
         *novelty,
     )
+    if "country" in available:
+        previous_country = pl.col("country").shift(1).over(USER)
+        new_country_flag = pl.col("country").is_first_distinct().over(USER).cast(pl.UInt32)
+        frame = frame.with_columns(
+            pl.when(first)
+            .then(None)
+            .otherwise(
+                (pl.col("country") != previous_country)
+                & (pl.col("hours_since_prev_success") < TRAVEL_WINDOW_HOURS)
+            )
+            .alias("country_change_1h"),
+            (new_country_flag.cum_sum().over(USER) - new_country_flag).alias(
+                "user_prior_countries"
+            ),
+        )
     key = [f"new_{s}" for s in KEY_SIGNALS if s in available]
     return frame.with_columns(
         pl.when(first)
@@ -136,11 +172,59 @@ def _global_features(successes: pl.LazyFrame, available: set[str]) -> pl.LazyFra
         if s in available
     ]
     sharing = []
-    for s in SHARING_SIGNALS:
+    for s in (*SHARING_SIGNALS, "user_agent"):
         if s in available:
             new_pair = pl.struct(s, USER).is_first_distinct().cast(pl.UInt32)
             sharing.append((new_pair.cum_sum().over(s) - new_pair).alias(f"{s}_prior_users"))
     return ordered.select(EVENT_ID, *rarity, *sharing)
+
+
+def _network_features(attempts: pl.LazyFrame, available: set[str]) -> pl.LazyFrame:
+    """Reputation and bursts of the login's network, from **all** earlier attempts (event_id keyed).
+
+    Shares are over strictly earlier attempts in global time order (null when there are none). The
+    burst counts sum hourly buckets over the previous 24 *full* hours, so the current hour (and any
+    attempt at the same instant) never counts: strictly past, whatever the timestamp ties.
+    """
+    flags = {"fail": (~pl.col(SUCCESS)).cast(pl.UInt32)}
+    if ATTACK_FLAG in attempts.collect_schema():
+        flags["attack"] = pl.col(ATTACK_FLAG).fill_null(value=False).cast(pl.UInt32)
+    ordered = attempts.sort(TIME, EVENT_ID).with_columns(
+        flag.alias(f"_{kind}") for kind, flag in flags.items()
+    )
+    shares = []
+    for s in (s for s in NETWORK_SIGNALS if s in available):
+        prior = pl.int_range(pl.len()).over(s)
+        for kind in flags:
+            earlier = pl.col(f"_{kind}").cum_sum().over(s) - pl.col(f"_{kind}")
+            shares.append(pl.when(prior > 0).then(earlier / prior).alias(f"{s}_prior_{kind}_share"))
+    if BURST_SIGNAL not in available:
+        return ordered.select(EVENT_ID, *shares)
+
+    hour = pl.col(TIME).dt.truncate("1h").alias("_hour")
+    burst = {"_n": f"{BURST_SIGNAL}_attempts_prev24h", "_f": f"{BURST_SIGNAL}_fails_prev24h"}
+    buckets = (
+        ordered.group_by(BURST_SIGNAL, hour)
+        .agg(pl.len().cast(pl.UInt32).alias("_n"), pl.col("_fail").sum().alias("_f"))
+        .sort(BURST_SIGNAL, "_hour")
+        .select(
+            BURST_SIGNAL,
+            "_hour",
+            *(
+                pl.col(c)
+                .rolling_sum_by("_hour", window_size=BURST_WINDOW, closed="left")
+                .over(BURST_SIGNAL)
+                .fill_null(0)
+                .alias(name)
+                for c, name in burst.items()
+            ),
+        )
+    )
+    return (
+        ordered.select(EVENT_ID, BURST_SIGNAL, hour, *shares)
+        .join(buckets, on=[BURST_SIGNAL, "_hour"], how="left")
+        .drop(BURST_SIGNAL, "_hour")
+    )
 
 
 def build_features(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.LazyFrame:
@@ -153,6 +237,7 @@ def build_features(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.Lazy
         _user_features(successes, available)
         .join(_global_features(successes, available), on=EVENT_ID, how="left")
         .join(_failures_before(attempts), on=EVENT_ID, how="left")
+        .join(_network_features(intermediate, available), on=EVENT_ID, how="left")
     )
     context = [
         pl.col("label_attack_ip").alias("attack_ip"),
@@ -168,7 +253,8 @@ def build_features(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.Lazy
         frame = frame.filter((pl.col(TIME) >= start) & (pl.col(TIME) < end))
 
     present = [c for c in feature_columns(tuple(FEATURE_GROUPS)) if c in frame.collect_schema()]
-    return frame.select(*ID_COLUMNS, LABEL, *present).sort(TIME, EVENT_ID)
+    context_present = [c for c in CONTEXT_COLUMNS if c in available]
+    return frame.select(*ID_COLUMNS, *context_present, LABEL, *present).sort(TIME, EVENT_ID)
 
 
 def features_path(config: DatasetConfig, data_dir: Path) -> Path:

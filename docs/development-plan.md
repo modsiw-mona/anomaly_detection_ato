@@ -175,22 +175,59 @@ legitimate logins challenged at the chosen threshold.
 
 | Family | Candidates |
 | --- | --- |
-| Baseline | Dummy; **Freeman et al. (2016) RBA score**, re-implemented and vectorised |
-| Unsupervised | Isolation Forest, ECOD (PyOD), others from PyOD as time allows |
-| Supervised | Logistic regression, Random Forest, XGBoost, LightGBM — class weights vs undersampling vs SMOTE, compared |
+| Baseline | Dummy; single-signal rules; logistic regression; Freeman et al. (2016) RBA score as **one comparison row** |
+| Unsupervised | Isolation Forest, others as time allows |
+| Supervised | Logistic regression, random forest, gradient-boosted trees — class weighting vs plain undersampling, compared |
 | Hybrid / weakly supervised | Anomaly scores as features for supervised models |
 | PU | PU bagging over a tree ensemble |
 | Optional | TabPFN (only under the conditions in section 3) |
 
-The course #6 minimum of 4 model types is covered. The Freeman re-implementation is validated
-against the expected scores published in the reference notebook. A match is strong evidence it is
-correct; a mismatch is investigated and documented.
+The course #6 minimum of 4 model types is covered.
+
+**Decided 2026-11-03 (Sofía):**
+
+- **This is research, not a replication.** Earlier methods are comparison points, not methods to
+  follow. Freeman's model was designed on another service (LinkedIn, 2016); it stays as one row in
+  the comparison table, which also covers the anteproyecto activity "revisión del notebook
+  rba-algorithm". Its re-implementation is *not* matched exactly against the reference notebook.
+- **No SMOTE and no invented takeovers for training.** Interpolating between ~100 takeovers produces
+  logins that do not exist, and current evidence shows no gain for strong classifiers (section 5.5).
+  The anteproyecto cites SMOTE only in its literature review; the thesis says why it is not used.
+- **Gradient boosting in three implementations:** scikit-learn's `HistGradientBoostingClassifier`,
+  LightGBM 4.7 and XGBoost 3.4. The last two need LLVM's OpenMP runtime on macOS (`brew install libomp`,
+  checked: official Homebrew formula, no known CVEs; documented in the README); on Linux, XGBoost uses its
+  official CPU-only build so CI does not download GPU libraries.
+- **Identity encodings are not tested as features** (deferred, deliberately): encoding *which* country or
+  ASN a login comes from would let a model learn "country = RO", i.e. memorise the dominant campaign — exactly
+  what the leave-campaign-out test guards against. Countries and networks enter only through behaviour
+  (novelty, rarity, reputation). Freeman's score, from issue #5, stays a reference row (PR-AUC 0.0002).
+- **The Romania campaign is evaluated separately.** 79 of the 141 takeovers (78 users, Feb–Nov 2020)
+  come from one country, RO. Every model reports results on the RO takeovers and on the others, and a
+  **leave-campaign-out** test trains without one group and measures detection of it: a model that
+  only memorises one campaign is useless against the next attacker.
+- **RTT is not imputed or synthesised.** The authors reassigned real RTTs at random among logins
+  with the same location, which erases exactly the useful signal (an RTT too long for the claimed
+  location suggests a proxy). The RTT ablation is kept to close the question formally.
+- **External enrichment is not used.** Synthesis shuffled values (ASN 29695 appears 7.7M times in
+  NO and 434k times in BR), so real-world facts about an ASN or IP would attach to synthetic labels.
+  New signals are derived from the data itself (e.g. country change within an hour, accounts per
+  network in a window).
+
+**Outcome of issue #6 (2026-11-04):** the **random forest with leaf size 2, the `campaign` and `travel`
+features and campaign balancing** is selected (mean PR-AUC 0.448 over 15 folds vs 0.043 for the logistic
+regression; recall 81% at a 0.1% budget, 89% at 1%; best of all finalists on the non-Romania takeovers). In a
+paired comparison on the same 15 folds it ties with LightGBM on the same features and beats the default forest
+and LightGBM without the new features. The Romania campaign is still caught when hidden from training (95% at 1%);
+the other takeovers generalise much less (PR-AUC ~0.1 → ~0.01 when hidden). The first run of the selection had a
+preprocessing bug (unseen networks imputed as clean), found by the independent review of PR #24 and fixed before
+this result. Notebook `5-models/06-sap-model_selection-2026_11_03.ipynb`; model in `data/06_models/`
+(gitignored).
 
 ### 5.5 Methods updated since the anteproyecto's sources
 
 | Topic | Current practice | Source |
 | --- | --- | --- |
-| Class imbalance | Class weights + threshold tuning tend to beat SMOTE for strong classifiers, and oversampling can harm probability calibration. SMOTE is still tested, since the anteproyecto mentions it. | Elor & Averbuch-Elor (2022); van den Goorbergh et al. (2022, JAMIA) |
+| Class imbalance | Class weights + threshold tuning tend to beat SMOTE for strong classifiers, and oversampling can harm probability calibration. SMOTE is therefore not used (decision of 2026-11-03). | Elor & Averbuch-Elor (2022); van den Goorbergh et al. (2022, JAMIA) |
 | Threshold choice | `TunedThresholdClassifierCV` (scikit-learn ≥ 1.5) | scikit-learn |
 | Controlling false alarms | Conformal p-values give a statistical guarantee on the false-alarm rate among legitimate logins, e.g. "challenge at most 1%" | Bates et al. (2023, Annals of Statistics) |
 | Few labels | A handful of labelled anomalies substantially improves on fully unsupervised detection, which supports the hybrid family | Han et al. (2022), ADBench, NeurIPS |
@@ -206,10 +243,14 @@ Claude stops and asks **only** when:
 1. The data contradicts a thesis assumption materially, e.g. the ATOs are so concentrated that no
    valid split exists, or the labels turn out not to sit on successful logins.
 2. A change would alter the **wording** of the objectives or methodology. Changing techniques is fine.
-3. Before touching the final test set (#7).
-4. Anything needing new accounts, credentials, paid services, or repo/security-settings changes.
-5. Results look too good (PR-AUC > 0.95, or near-perfect recall): suspect leakage and investigate
-   before reporting.
+3. Anything needing new accounts, credentials, paid services, or repo/security-settings changes.
+
+**Updated 2026-11-03 (Sofía):** no stop before the final test set. Claude opens it in #7 once the
+model is frozen in #6. The *rule* stays: it is evaluated once, and nothing is tuned on it afterwards.
+Results that look too good (PR-AUC > 0.95, or near-perfect recall) are investigated for leakage
+before they are reported, without stopping. Each PR also gets an **independent review**: a separate
+agent with no context from the development session reads the issue and the PR and checks that the
+PR does what the issue asks, and its findings are fixed or answered in the PR.
 
 Everything else is decided by this plan and reported at the end of each issue.
 
@@ -261,8 +302,8 @@ must never be copied into it.
 | #2 | Load into the canonical schema, unify nulls, fix data types, flag artefacts → parquet in `data/02_intermediate/`; notebook `2-exploration` |
 | #3 | Univariate / bivariate / multivariate EDA; deep dive on the 140 ATOs (timeline, users, failures before success, attack-IP overlap); artefact, geography and RTT checks; validation rules; split decision; sample definition; notebook `3-analysis` |
 | #4 | Behaviour features (polars, no future peeking) + scikit-learn preprocessing pipeline → `data/04_feature/`; notebook `4-feat_eng` |
-| #5 | Dummy + Freeman baseline, validation protocol, CV, learning curves; notebook `5-models` |
-| #6 | Model-family comparison, ablations (geography, RTT, identity encodings, artefacts), tuning of the top 2–3, best pipeline → `.joblib`; notebook `5-models` |
+| #5 | Dummy, rules, logistic regression and Freeman baselines, validation protocol, CV, learning curves; notebook `5-models` |
+| #6 | Takeover profile; model-family comparison; RO vs other takeovers and leave-campaign-out; new derived features; ablations (geography, RTT, identity encodings, artefacts), tuning of the top 2–3, best pipeline → `.joblib`; notebook `5-models` |
 | #7 | Final test evaluation, thresholds and alert budgets, conformal false-alarm control, SHAP, error analysis, FP/FN costs, friction; notebook `6-interpretation` |
 | #8 | Streamlit demo: score one login → risk score, tier (allow / step-up / block), top signals; screenshots + run instructions |
 
@@ -272,6 +313,7 @@ must never be copied into it.
 | --- | --- |
 | 16 GB RAM vs 31.3M rows | polars streaming, categoricals, column pruning, cached parquet stages, user-based sample |
 | Freeman score cost | vectorised cumulative counts instead of per-row loops |
+| One campaign dominates the labels | results reported per group; leave-campaign-out test |
 | 140 positives → high-variance metrics | repeated grouped CV, bootstrap CIs, alert-budget recall |
 | Synthetic artefacts | behaviour-first features, flags, ablations |
 | Future information leaking into features | strict "past only" computation, unit-tested |

@@ -38,6 +38,13 @@ Template for notebooks                       | [Notebook template] |
     make init_git
     ```
 
+1. **macOS only:** LightGBM and XGBoost need LLVM's OpenMP runtime (official Homebrew formula,
+   MIT licence). Linux CI runners already have it.
+
+    ```bash
+    brew install libomp
+    ```
+
 1. Set up the environment:
 
     ```bash
