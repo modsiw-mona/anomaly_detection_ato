@@ -177,3 +177,40 @@ def test_feature_groups() -> None:
     assert not set(FEATURE_GROUPS["artefacts"]) & set(columns), "artefacts only behind ablations"
     assert not set(FEATURE_GROUPS["rtt"]) & set(columns), "RTT only behind ablations"
     assert set(DEFAULT_GROUPS) <= FEATURE_GROUPS.keys()
+
+
+def test_network_reputation_counts_every_earlier_attempt(hand_built: pl.DataFrame) -> None:
+    row = hand_built.filter(pl.col("event_id") == USER_2_FIRST).row(0, named=True)
+    # earlier attempts from ASN 100: January success, event 1 success, event 2 failure
+    assert row["asn_prior_fail_share"] == pytest.approx(1 / 3)
+    assert row["asn_prior_attack_share"] == 0.0
+    assert row["asn_attempts_prev24h"] == 0, "nothing in the 24 full hours before"
+    takeover = hand_built.filter(pl.col("event_id") == TAKEOVER).row(0, named=True)
+    assert takeover["asn_prior_fail_share"] is None, "ASN 200 never seen before"
+
+
+def test_burst_counts_only_previous_full_hours() -> None:
+    rows = [
+        {"user_id": 1, "timestamp": at(0), "login_success": False},
+        {"user_id": 2, "timestamp": at(30), "login_success": False},
+        {"user_id": 3, "timestamp": at(65), "login_success": True},  # next hour
+        {"user_id": 4, "timestamp": at(70), "login_success": True},  # same hour as event 2
+    ]
+    frame = build_features(_events(rows), _config()).collect()
+    assert frame["asn_attempts_prev24h"].to_list() == [2, 2], (
+        "the two attempts of the previous hour"
+    )
+    assert frame["asn_fails_prev24h"].to_list() == [2, 2]
+    assert frame["user_agent_prior_users"].to_list() == [0, 1]
+
+
+def test_travel_features(hand_built: pl.DataFrame) -> None:
+    takeover = hand_built.filter(pl.col("event_id") == TAKEOVER).row(0, named=True)
+    assert takeover["country_change_1h"] is True, "NO 40 minutes earlier, now SE"
+    assert takeover["user_prior_countries"] == 1
+    back = hand_built.filter(pl.col("event_id") == USER_1_RETURNS).row(0, named=True)
+    assert back["country_change_1h"] is True, "SE 10 minutes earlier, now NO"
+    assert back["user_prior_countries"] == 2  # noqa: PLR2004
+    first = hand_built.filter(pl.col("event_id") == USER_2_FIRST).row(0, named=True)
+    assert first["country_change_1h"] is None
+    assert first["user_prior_countries"] == 0
