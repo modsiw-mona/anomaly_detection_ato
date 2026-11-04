@@ -93,3 +93,8 @@ max-complexity = 10
 
 [lint.isort]
 known-third-party = ["fastapi", "pydantic"]
+
+[lint.per-file-ignores]
+# Notebooks print text for people: typographic symbols (–, ×, −) are intended, and small literal
+# constants (array dimensions, thresholds stated in the prose next to them) read better inline.
+"notebooks/**/*.ipynb" = ["RUF001", "PLR2004"]
