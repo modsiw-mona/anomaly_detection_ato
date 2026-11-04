@@ -69,7 +69,8 @@ A local [Streamlit](https://streamlit.io/) app scores a login with the selected 
 (allow / step-up / review-block) and the inputs behind the score. It runs only on your machine
 (`127.0.0.1`), with Streamlit's usage statistics turned off (`.streamlit/config.toml`).
 
-1. Build the data and the model once (each step is idempotent; the notebooks take ~70 and ~2 minutes):
+1. After [setting up the environment](#set-up-the-environment) (including `brew install libomp` on macOS), build
+   the data and the model once (each step is idempotent; the notebooks take ~70 and ~2 minutes):
 
     ```bash
     make data intermediate features split
@@ -84,8 +85,8 @@ A local [Streamlit](https://streamlit.io/) app scores a login with the selected 
     ```
 
 Pick a kind of example in the sidebar (a takeover sent to review, one caught by step-up, a false alarm, an ordinary
-login), then switch the *What if…* signals to see the score and the response change. `?example=<i>&n=<k>` in the URL
-opens a given example. Screenshots and details: [`notebooks/7-deploy/`](notebooks/7-deploy/README.md).
+login), then switch a *What if…* signal to see the score and the response change. `?example=<review|step-up|false-alarm|ordinary>&n=<k>`
+in the URL opens a given example. Screenshots and details: [`notebooks/7-deploy/`](notebooks/7-deploy/README.md).
 
 ![Demo: a takeover sent to review](notebooks/7-deploy/screenshots/01-takeover-review.png)
 

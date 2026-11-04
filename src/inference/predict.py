@@ -28,7 +28,14 @@ ALLOW = "allow"
 def alert_thresholds(
     dev_scores: FloatArray, budgets: Mapping[str, float] = BUDGETS
 ) -> dict[str, float]:
-    """Score threshold of each tier: the score above which that share of development logins falls."""
+    """Score threshold of each tier: the score above which that share of development logins falls.
+
+    Tiers must be listed strictest first (smallest budget first): :meth:`Detector.tier` returns the
+    first tier whose threshold a score reaches.
+    """
+    shares = list(budgets.values())
+    if shares != sorted(shares):
+        raise ValueError("budgets must be listed strictest (smallest) first")
     return {tier: float(np.quantile(dev_scores, 1 - share)) for tier, share in budgets.items()}
 
 
@@ -96,7 +103,12 @@ class Detector:
 
     def set_reference(self, typical: pl.DataFrame) -> None:
         """Explain relative to these logins (e.g. a sample of ordinary ones) instead of the model's
-        average training login, which campaign balancing and undersampling make far riskier than usual."""
+        average training login, which campaign balancing and undersampling make far riskier than usual.
+
+        The mean tree-SHAP vector of the reference is subtracted, so contributions still add up to
+        ``score(login) - mean score(reference)``; per-input values are an approximation of SHAP computed
+        against that background. Units are the model's output (probabilities for the random forest).
+        """
         _, values = self._shap(typical)
         self._reference = values.mean(axis=0)
 
@@ -109,7 +121,6 @@ class Detector:
         names, values = self._shap(frame)
         if self._reference is not None:
             values = values - self._reference
-        raw = to_model_frame(frame, self.columns)
         explanations = []
         for i in range(frame.height):
             order = np.argsort(-np.abs(values[i]))[:top]
@@ -117,7 +128,7 @@ class Detector:
                 pl.DataFrame(
                     {
                         "input": [names[j] for j in order],
-                        "value": [_raw_value(raw, names[j], i) for j in order],
+                        "value": [_raw_value(frame, names[j], i) for j in order],
                         "contribution": values[i][order],
                     }
                 )
@@ -128,6 +139,14 @@ class Detector:
 NEVER_SEEN_PREFIX = "missingindicator_"  # name scikit-learn gives the "never seen" indicators
 
 
+SMALL_SHARE = 1e-4
+
+
+def _format_share(value: float) -> str:
+    """A share as a percentage; tiny non-zero shares as "< 0.01%" so they do not read as 0."""
+    return "< 0.01%" if 0 < value < SMALL_SHARE else f"{value:.2%}"
+
+
 def format_value(name: str, value: object) -> str:
     """A feature value for people: shares as percentages, flags as yes/no, missing as a dash."""
     if value is None:
@@ -136,7 +155,7 @@ def format_value(name: str, value: object) -> str:
         return "yes" if value else "no"
     if isinstance(value, float):
         if "share" in name:
-            return f"{value:.2%}"
+            return _format_share(value)
         return f"{value:,.0f}" if value.is_integer() else f"{value:,.2f}"
     if hasattr(value, "strftime"):
         return f"{value:%Y-%m-%d %H:%M:%S}"
@@ -147,7 +166,8 @@ def _raw_value(raw: pl.DataFrame, name: str, row: int) -> str:
     """The login's original value behind a model input (e.g. ``hour`` for ``hour_sin``)."""
     if name.startswith(NEVER_SEEN_PREFIX):
         source = name.removeprefix(NEVER_SEEN_PREFIX)
-        return "network never seen" if raw[source][row] is None else "network seen before"
+        what = source.split("_", 1)[0].upper()  # ASN or IP
+        return f"{what} never seen" if raw[source][row] is None else f"{what} seen before"
     if name in raw.columns:
         return format_value(name, raw[name][row])
     for column in raw.columns:  # one-hot and cyclic encodings: device_type_mobile, hour_sin

@@ -22,7 +22,8 @@ def data_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A data directory shaped like the real one, for dataset ``rba``, built from toy events."""
     root = tmp_path_factory.mktemp("data")
     frame = build_features(_events(_random_events(1_500, seed=5)), _config()).collect()
-    frame = frame.with_columns(pl.col("new_country").fill_null(value=False).alias("label_ato"))
+    # takeovers = logins from an attack IP, so the "IP on an attack list" what-if must move the score
+    frame = frame.with_columns(pl.col("attack_ip").alias("label_ato"))
     columns = feature_columns((*DEFAULT_GROUPS, "campaign", "travel"))
     pipeline = train_supervised("random forest", frame, columns, negative_share=0.5)
     for folder in ("04_feature", "05_model_input", "06_models", "07_model_output"):
@@ -50,10 +51,14 @@ def test_demo_scores_a_login_and_reacts_to_what_if(
     assert not app.exception, app.exception
     assert app.metric[0].label == "Takeover score"
     before = app.metric[0].value
-    app.toggle[0].set_value(not app.toggle[0].value).run()
+    attack = next(t for t in app.toggle if t.label == "IP address on an attack list")
+    attack.set_value(not attack.value).run()
     assert not app.exception, app.exception
-    assert app.metric[0].delta is not None, "a what-if change is compared with the real login"
-    assert isinstance(before, str)
+    assert app.metric[0].value != before, "the what-if change reaches the model"
+    assert app.metric[0].delta is not None
+    assert app.metric[0].delta.lstrip("+-") != "0.0000 vs the real login"
+    first = next(t for t in app.toggle if t.label == "First successful login of this account")
+    assert first.disabled, "whether a login is the account's first is a fact, not a what-if"
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

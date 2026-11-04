@@ -42,7 +42,8 @@ split: ## Assign users to dev/test (grouped by user, stratified by label) (DATAS
 	PYTHONPATH=src uv run python -m data.split --dataset $(or $(DATASET),rba)
 
 demo: ## Run the Streamlit risk demo (needs the model from notebooks 06 and 07)
-	PYTHONPATH=src uv run streamlit run notebooks/7-deploy/app.py
+	PYTHONPATH=src ATO_DATASET=$(or $(DATASET),rba) uv run streamlit run notebooks/7-deploy/app.py \
+		--server.address=127.0.0.1 --server.headless=true --browser.gatherUsageStats=false
 
 notebooks_run: ## Execute a notebook in place, e.g. make notebooks_run NB=notebooks/1-data/x.ipynb
 	@echo "🚀 Executing $(NB)..."

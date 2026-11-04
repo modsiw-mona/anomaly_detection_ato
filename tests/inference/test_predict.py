@@ -40,6 +40,11 @@ def saved(features: pl.DataFrame, tmp_path_factory: pytest.TempPathFactory) -> P
     return root
 
 
+def test_budgets_must_be_strictest_first() -> None:
+    with pytest.raises(ValueError, match="strictest"):
+        alert_thresholds(np.linspace(0, 1, 100), {"loose": 0.01, "strict": 0.001})
+
+
 def test_thresholds_follow_the_budgets() -> None:
     scores = np.linspace(0, 1, 100_001)
     thresholds = alert_thresholds(scores)
@@ -52,13 +57,13 @@ def test_tiers(saved: Path) -> None:
     detector = Detector.load(saved, "toy")
     block, step_up = detector.thresholds["review / block"], detector.thresholds["step-up"]
     assert detector.tier(block) == "review / block"
-    assert detector.tier((block + step_up) / 2) in {"step-up", "review / block"}
+    assert block > step_up, "the stricter tier has the higher threshold"
+    assert detector.tier((block + step_up) / 2) == "step-up"
     assert detector.tier(-1.0) == ALLOW
     assert detector.riskier_than(-1.0) == 0.0
     assert detector.riskier_than(2.0) == 1.0
-    assert detector.riskier_than(step_up) >= 1 - 2 * BUDGETS["step-up"], (
-        "the step-up threshold is the top 1%"
-    )
+    rank = detector.riskier_than(step_up)
+    assert 0.95 <= rank <= 1 - BUDGETS["step-up"] + 1e-9, "the step-up threshold is the top 1%"  # noqa: PLR2004
 
 
 def test_loaded_detector_scores_and_explains(saved: Path, features: pl.DataFrame) -> None:
@@ -83,8 +88,8 @@ def test_explanations_name_the_original_value() -> None:
             "hour": [3.0, 4.0],
         }
     )
-    assert _raw_value(raw, "missingindicator_asn_prior_attack_share", 0) == "network never seen"
-    assert _raw_value(raw, "missingindicator_asn_prior_attack_share", 1) == "network seen before"
+    assert _raw_value(raw, "missingindicator_asn_prior_attack_share", 0) == "ASN never seen"
+    assert _raw_value(raw, "missingindicator_asn_prior_attack_share", 1) == "ASN seen before"
     assert _raw_value(raw, "asn_prior_attack_share", 1) == "50.00%"
     assert _raw_value(raw, "device_type_mobile", 1) == "desktop"
     assert _raw_value(raw, "hour_sin", 0) == "3"
@@ -92,6 +97,8 @@ def test_explanations_name_the_original_value() -> None:
 
 def test_values_are_formatted_for_people() -> None:
     assert format_value("global_share_country", 0.0017767) == "0.18%"
+    assert format_value("global_share_ip", 0.00003) == "< 0.01%"
+    assert format_value("global_share_ip", 0.0) == "0.00%"
     assert format_value("first_success", value=True) == "yes"
     assert format_value("hours_since_prev_success", None) == "—"
     assert format_value("hours_since_prev_success", 937.456) == "937.46"
@@ -109,3 +116,28 @@ def test_explanations_relative_to_typical_logins(saved: Path, features: pl.DataF
         "contributions relative to the same rows average out"
     )
     assert not absolute.equals(relative[0])
+
+
+def test_explanations_add_up_to_the_score(saved: Path, features: pl.DataFrame) -> None:
+    detector = Detector.load(saved, "toy")
+    rows = features.filter(pl.col("label_ato")).head(2)
+    reference = features.filter(~pl.col("label_ato")).head(20)
+    everything = 10 * len(detector.columns)
+    detector.explain(rows, top=1)  # builds the explainer
+    base = float(np.atleast_1d(detector._explainer.expected_value)[-1])
+    scores = detector.score(rows)
+    for i, e in enumerate(detector.explain(rows, top=everything)):
+        assert float(e["contribution"].sum()) + base == pytest.approx(scores[i], abs=1e-6)
+    detector.set_reference(reference)
+    for i, e in enumerate(detector.explain(rows, top=everything)):
+        expected = scores[i] - float(detector.score(reference).mean())
+        assert float(e["contribution"].sum()) == pytest.approx(expected, abs=1e-6), (
+            "relative to the reference"
+        )
+
+
+def test_explanations_show_flags_as_yes_no(saved: Path, features: pl.DataFrame) -> None:
+    detector = Detector.load(saved, "toy")
+    explanation = detector.explain(features.head(1), top=10 * len(detector.columns))[0]
+    flag = explanation.filter(pl.col("input") == "attack_ip")["value"][0]
+    assert flag in {"yes", "no"}
