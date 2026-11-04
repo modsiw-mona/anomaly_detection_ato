@@ -57,8 +57,10 @@ def test_demo_scores_a_login_and_reacts_to_what_if(
     assert app.metric[0].value != before, "the what-if change reaches the model"
     assert app.metric[0].delta is not None
     assert app.metric[0].delta.lstrip("+-") != "0.0000 vs the real login"
-    first = next(t for t in app.toggle if t.label == "First successful login of this account")
-    assert first.disabled, "whether a login is the account's first is a fact, not a what-if"
+    labels = {t.label for t in app.toggle}
+    assert "First successful login of this account" not in labels, (
+        "a fact, shown in the table, not a switch"
+    )
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -25,7 +25,7 @@ if str(REPO_ROOT / "src") not in sys.path:
 
 from data.datasets import load_dataset_config  # noqa: E402
 from data.split import load_side  # noqa: E402
-from inference.predict import ALLOW, Detector, format_value  # noqa: E402
+from inference.predict import ALLOW, NEVER_SEEN_PREFIX, Detector, format_value  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("ATO_DATA_DIR", REPO_ROOT / "data"))
 DATASET = os.environ.get("ATO_DATASET", "rba")
@@ -43,18 +43,51 @@ KEY_NOVELTY = (
     "new_os",
     "new_browser",
 )  # n_new_key_signals
-WHAT_IF = {
-    "first_success": "First successful login of this account",
-    "new_country": "Country never used by this account before",
-    "new_asn": "Network (ASN) never used by this account before",
-    "new_device_type": "Device type never used by this account before",
+WHAT_IF = {  # behaviour signals that can be switched (positive wording: on = the signal is present)
+    "new_country": "New country for this account",
+    "new_asn": "New network (ASN) for this account",
+    "new_device_type": "New device type for this account",
     "attack_ip": "IP address on an attack list",
-    "country_change_1h": "Country changed less than an hour after the previous login",
+    "country_change_1h": "Country changed within an hour of the previous login",
 }
 KEY_COLUMNS = [
-    "event_id", "timestamp", "country", "device_type", "prior_successes", "hours_since_prev_success",
-    "global_share_country", "asn_prior_attack_share",
+    "event_id", "timestamp", "country", "device_type", "first_success", "prior_successes",
+    "hours_since_prev_success", "global_share_country", "global_share_asn", "asn_prior_attack_share",
 ]  # fmt: skip
+LABELS = {  # plain-language names for the inputs shown on screen
+    "event_id": "Login id (reference only, not a model input)",
+    "timestamp": "Time",
+    "country": "Country",
+    "device_type": "Device type",
+    "first_success": "First successful login of this account",
+    "prior_successes": "Earlier successful logins of this account",
+    "hours_since_prev_success": "Hours since the account's previous login",
+    "global_share_country": "Share of all earlier logins from this country",
+    "global_share_asn": "Share of all earlier logins from this network (ASN)",
+    "global_share_ip": "Share of all earlier logins from this IP",
+    "global_share_browser": "Share of all earlier logins with this browser",
+    "global_share_os": "Share of all earlier logins with this OS",
+    "global_share_device_type": "Share of all earlier logins with this device type",
+    "global_share_user_agent": "Share of all earlier logins with this exact user agent",
+    "asn_prior_attack_share": "Share of this network's earlier attempts from attack IPs",
+    "asn_prior_fail_share": "Share of this network's earlier attempts that failed",
+    "ip_prior_attack_share": "Share of this IP's earlier attempts from attack IPs",
+    "ip_prior_fail_share": "Share of this IP's earlier attempts that failed",
+    "asn_attempts_prev24h": "Attempts from this network in the previous 24 hours",
+    "asn_fails_prev24h": "Failed attempts from this network in the previous 24 hours",
+    "asn_prior_users": "Accounts seen on this network before",
+    "ip_prior_users": "Accounts seen on this IP before",
+    "user_agent_prior_users": "Accounts seen with this exact user agent before",
+    "user_prior_countries": "Countries this account used before",
+    "n_new_key_signals": "Number of new key signals at once",
+    "fails_1h": "Failed attempts on this account in the previous hour",
+    "fails_24h": "Failed attempts on this account in the previous 24 hours",
+    **{
+        f"new_{s}": f"New {s.replace('_', ' ')} for this account"
+        for s in ("ip", "os", "browser", "user_agent", "region", "city")
+    },
+    **WHAT_IF,
+}
 
 
 @st.cache_resource
@@ -141,38 +174,53 @@ def pick_login(groups: dict[str, pl.DataFrame], det: Detector) -> pl.DataFrame:
     return pool.sort(pl.col("event_id").hash(seed=0))[int(pick)]
 
 
+def label(column: str) -> str:
+    """Plain-language name of an input; never-seen indicators and encodings read from their source."""
+    if column.startswith(NEVER_SEEN_PREFIX):
+        source = column.removeprefix(NEVER_SEEN_PREFIX)
+        return f"{source.split('_', 1)[0].upper()} never seen before (for: {LABELS.get(source, source)})"
+    return LABELS.get(column, column)
+
+
 def login_panel(login: pl.DataFrame) -> pl.DataFrame:
-    """Left column: the login's key fields and the what-if toggles; returns the edited login."""
+    """Left column: the login's key fields and its behaviour signals; returns the edited login."""
     st.subheader("The login")
     shown = [c for c in KEY_COLUMNS if c in login.columns]
-    st.dataframe(
-        pl.DataFrame({"field": shown, "value": [format_value(c, login[c][0]) for c in shown]}),
-        width="stretch",
-        hide_index=True,
+    st.table(
+        pl.DataFrame(
+            {
+                "field": [label(c) for c in shown],
+                "value": [format_value(c, login[c][0]) for c in shown],
+            }
+        ),
     )
     st.markdown(f"**Ground truth:** {'takeover' if login['label_ato'][0] else 'legitimate'}")
-    st.subheader("What if…")
+    st.subheader("Behaviour signals — what if…")
     first_login = (
         bool(login["prior_successes"][0] == 0) if "prior_successes" in login.columns else False
     )
+    if first_login:
+        st.info(
+            "This is the account's **first** successful login. There is no earlier login to compare it with, "
+            "so the account-history signals (new country, network or device, country change) do not apply. "
+            "Its score comes from global signals: how rare its country, network and browser are among all "
+            "logins, and the network's attack history (see *Why*)."
+        )
     edited = login.clone()
-    for column, label in WHAT_IF.items():
-        if column in login.columns:
-            current = bool(login[column][0]) if login[column][0] is not None else False
-            # history-based signals do not exist on an account's first login; first_success is a fact
-            locked = column == "first_success" or (first_login and column in HISTORY_SIGNALS)
-            value = st.toggle(
-                label, value=current, key=f"{column}-{login['event_id'][0]}", disabled=locked
-            )
-            edited = edited.with_columns(pl.lit(value).alias(column))
+    for column, text in WHAT_IF.items():
+        if column not in login.columns or (first_login and column in HISTORY_SIGNALS):
+            continue
+        current = bool(login[column][0]) if login[column][0] is not None else False
+        value = st.toggle(text, value=current, key=f"{column}-{login['event_id'][0]}")
+        edited = edited.with_columns(pl.lit(value).alias(column))
     if "n_new_key_signals" in login.columns and not first_login:
         key = [c for c in KEY_NOVELTY if c in edited.columns]
         edited = edited.with_columns(
             pl.sum_horizontal(key).cast(pl.UInt8).alias("n_new_key_signals")
         )
     st.caption(
-        "One signal at a time; the login's other features stay as they were. Signals that need earlier logins "
-        "are locked on an account's first login."
+        "On = the signal is present in this login. Switch one to see how the score and the response would "
+        "change; the login's other features stay as they were."
     )
     return edited
 
@@ -206,12 +254,11 @@ def risk_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None
     effect = (
         pl.when(pl.col("contribution") > 0).then(pl.lit("↑ raises")).otherwise(pl.lit("↓ lowers"))
     )
-    st.dataframe(
-        pl.concat([changed_inputs, raises, lowers]).with_columns(
-            effect.alias("effect"), pl.col("contribution").round(3)
-        ),
-        width="stretch",
-        hide_index=True,
+    table = pl.concat([changed_inputs, raises, lowers])
+    st.table(
+        table.with_columns(
+            pl.col("input").map_elements(label, return_dtype=pl.String),
+        ).with_columns(effect.alias("effect"), pl.col("contribution").round(3)),
     )
     st.caption(
         "Tree SHAP values relative to a typical login: any input you changed, then the inputs that make this "
@@ -239,7 +286,7 @@ def main() -> None:
         st.info("No logins to show.")
         st.stop()
     login = pick_login(groups, det)
-    left, right = st.columns([1, 1])
+    left, right = st.columns([1, 1.2])
     with left:
         edited = login_panel(login)
     with right:
