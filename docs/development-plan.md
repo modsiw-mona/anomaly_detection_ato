@@ -223,6 +223,16 @@ preprocessing bug (unseen networks imputed as clean), found by the independent r
 this result. Notebook `5-models/06-sap-model_selection-2026_11_03.ipynb`; model in `data/06_models/`
 (gitignored).
 
+**Outcome of issue #7 (2026-11-04):** on the test side (20% of users, 28 takeovers) the selected model reaches
+PR-AUC **0.62** [0.45–0.78], with **86%** of takeovers in the top 0.1% of logins and **100%** in the top 1%. Thresholds
+fixed on development scores flag 0.09% (review / block) and 0.95% (step-up) of test logins (76 and 668 false alarms
+per takeover caught); split-conformal thresholds keep the share of legitimate logins flagged within α (0.095% ≤ 0.1%,
+0.95% ≤ 1%). Leakage checks: no shared users; shuffling the attack-IP-derived columns halves PR-AUC, so the results
+are an upper bound if the attack-IP flag was matched after the fact. Misses at the strict tier: three first logins
+with common client values and one login following an earlier, legitimate-labelled login from the same country. An
+earlier run with the pre-fix issue #6 model (LightGBM) gave PR-AUC 0.606. Notebook
+`6-interpretation/07-sap-model_interpretation-2026_11_04.ipynb`; charts, tables and metrics in `data/08_reporting/`.
+
 ### 5.5 Methods updated since the anteproyecto's sources
 
 | Topic | Current practice | Source |
