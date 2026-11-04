@@ -4,9 +4,9 @@ Every candidate is a scikit-learn ``Pipeline`` (preprocessing + model) trained t
 logistic baseline (``model.baselines``): every takeover plus a random share of legitimate logins,
 evaluated on complete, unsampled folds.
 
-* **Supervised** — logistic regression (the bar), random forest, gradient-boosted trees
-  (scikit-learn's ``HistGradientBoostingClassifier``, the LightGBM-style algorithm with no system
-  dependency).
+* **Supervised** — logistic regression (the bar), random forest, and gradient-boosted trees in three
+  implementations: scikit-learn's ``HistGradientBoostingClassifier``, LightGBM and XGBoost (the last
+  two need the OpenMP runtime, ``brew install libomp`` on macOS).
 * **Unsupervised** — Isolation Forest, trained on logins without labels; the takeovers are used only
   to evaluate it.
 * **PU bagging** — the average of several gradient-boosting models, each trained against a different
@@ -25,9 +25,11 @@ from collections.abc import Callable, Mapping, Sequence
 import numpy as np
 import numpy.typing as npt
 import polars as pl
+from lightgbm import LGBMClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier, IsolationForest, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
+from xgboost import XGBClassifier
 
 from data.features import LABEL, USER
 from model.baselines import NEGATIVE_SHARE, SEED, training_sample
@@ -79,10 +81,49 @@ def gradient_boosting(columns: Sequence[str], seed: int = SEED) -> Pipeline:
     return _pipeline(columns, model)
 
 
+def lightgbm(columns: Sequence[str], seed: int = SEED) -> Pipeline:
+    """LightGBM with the same capacity and regularisation as :func:`gradient_boosting`, plus row and
+    column subsampling."""
+    model = LGBMClassifier(
+        n_estimators=300,
+        learning_rate=0.05,
+        num_leaves=15,
+        min_child_samples=40,
+        reg_lambda=1.0,
+        subsample=0.8,
+        subsample_freq=1,
+        colsample_bytree=0.8,
+        n_jobs=-1,
+        random_state=seed,
+        verbose=-1,
+    )
+    return _pipeline(columns, model)
+
+
+def xgboost(columns: Sequence[str], seed: int = SEED) -> Pipeline:
+    """XGBoost (histogram method, leaf-wise growth) with the same capacity as :func:`lightgbm`."""
+    model = XGBClassifier(
+        n_estimators=300,
+        learning_rate=0.05,
+        tree_method="hist",
+        grow_policy="lossguide",
+        max_leaves=15,
+        max_depth=0,
+        reg_lambda=1.0,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        n_jobs=-1,
+        random_state=seed,
+    )
+    return _pipeline(columns, model)
+
+
 SUPERVISED: dict[str, Callable[[Sequence[str], int], Pipeline]] = {
     "logistic regression": logistic_regression,
     "random forest": random_forest,
     "gradient boosting": gradient_boosting,
+    "LightGBM": lightgbm,
+    "XGBoost": xgboost,
 }
 
 
