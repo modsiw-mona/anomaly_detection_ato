@@ -228,10 +228,14 @@ Claude stops and asks **only** when:
 1. The data contradicts a thesis assumption materially, e.g. the ATOs are so concentrated that no
    valid split exists, or the labels turn out not to sit on successful logins.
 2. A change would alter the **wording** of the objectives or methodology. Changing techniques is fine.
-3. Before touching the final test set (#7).
-4. Anything needing new accounts, credentials, paid services, or repo/security-settings changes.
-5. Results look too good (PR-AUC > 0.95, or near-perfect recall): suspect leakage and investigate
-   before reporting.
+3. Anything needing new accounts, credentials, paid services, or repo/security-settings changes.
+
+**Updated 2026-11-03 (Sofía):** no stop before the final test set. Claude opens it in #7 once the
+model is frozen in #6. The *rule* stays: it is evaluated once, and nothing is tuned on it afterwards.
+Results that look too good (PR-AUC > 0.95, or near-perfect recall) are investigated for leakage
+before they are reported, without stopping. Each PR also gets an **independent review**: a separate
+agent with no context from the development session reads the issue and the PR and checks that the
+PR does what the issue asks, and its findings are fixed or answered in the PR.
 
 Everything else is decided by this plan and reported at the end of each issue.
 
