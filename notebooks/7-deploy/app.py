@@ -16,6 +16,7 @@ are the account-novelty flags themselves.
 """
 
 import copy
+import itertools
 import os
 import sys
 from dataclasses import dataclass
@@ -85,6 +86,11 @@ CONTEXT = {  # thresholds sit between dev takeovers and dev legitimate logins (n
         pl.col("global_share_browser") < 0.001,  # noqa: PLR2004
     ),
 }
+NETWORK = (
+    "rare_network",
+    "quiet_network",
+    "attack_network",
+)  # describe one network: moved together
 NETWORK_SIGNALS = {"attack_ip": "IP address on an attack list"}
 HISTORY_SIGNALS = {  # compared with the account's earlier logins (on = the signal is present)
     "new_country": "New country",
@@ -104,7 +110,6 @@ IMPLIED_BY = {  # a signal that is always present when another one is (no except
     "new_user_agent": ("new_device_type", "new_os", "new_browser"),
 }
 KEY_NOVELTY = ("new_country", "new_asn", "new_device_type", "new_os", "new_browser")
-TRAVEL_HOURS = 0.5  # a country change within an hour needs the previous login less than an hour ago
 MIN_SCORE_CHANGE = 5e-5  # below this the 4-decimal score does not move
 
 KEY_COLUMNS = [
@@ -193,21 +198,38 @@ def context_state(login: pl.DataFrame, name: str) -> bool:
     return bool(login.select(CONTEXT[name].condition.fill_null(False)).item())
 
 
+Values = dict[str, float | None]
+
+
 @st.cache_data
-def context_values() -> dict[str, dict[bool, dict[str, float]]]:
-    """For each switch and each position, the median of its inputs over test logins in that position."""
+def context_values() -> tuple[dict[tuple[bool, ...], Values], dict[str, dict[bool, Values]]]:
+    """Median inputs of test logins in each switch position.
+
+    The network switches describe one network, so their inputs come from logins matching all three at once
+    (every combination occurs in the test data); country and browser are independent of the network.
+    """
     logins = test_logins()
-    values: dict[str, dict[bool, dict[str, float]]] = {}
-    for name, context in CONTEXT.items():
-        columns = [c for c in context.columns if c in logins.columns]
-        on = context.condition.fill_null(False)
-        values[name] = {
-            state: logins.filter(on if state else ~on)
-            .select(pl.col(columns).median())
-            .row(0, named=True)
-            for state in (True, False)
-        }
-    return values
+    on = {name: context.condition.fill_null(False) for name, context in CONTEXT.items()}
+
+    def medians(names: tuple[str, ...], where: pl.Expr) -> Values:
+        columns = [c for n in names for c in CONTEXT[n].columns if c in logins.columns]
+        return logins.filter(where).select(pl.col(columns).median()).row(0, named=True)
+
+    network = {
+        pattern: medians(
+            NETWORK,
+            pl.all_horizontal(
+                on[n] if state else ~on[n] for n, state in zip(NETWORK, pattern, strict=True)
+            ),
+        )
+        for pattern in itertools.product((True, False), repeat=len(NETWORK))
+    }
+    others = {
+        name: {state: medians((name,), on[name] if state else ~on[name]) for state in (True, False)}
+        for name in CONTEXT
+        if name not in NETWORK
+    }
+    return network, others
 
 
 def kinds(logins: pl.DataFrame, det: Detector) -> dict[str, pl.DataFrame]:
@@ -258,6 +280,7 @@ def load_signals(login: pl.DataFrame) -> None:
         if column in login.columns:
             value = login[column][0]
             st.session_state[_key(column)] = bool(value) if value is not None else False
+    st.session_state["forced"] = set()  # signals switched on only because a signal they follow was
     st.session_state["loaded"] = int(login["event_id"][0])
 
 
@@ -292,6 +315,7 @@ def pick_scenario(
         horizontal=True,
         key=f"scenario-{kind}",
     )
+    st.query_params.update({"example": kind, "scenario": scenario})  # the URL reopens this scenario
     login = picks[kind][scenario]
     st.caption(
         f"A real test login, the typical (median-score) one of its scenario; {counts[kind]:,} test logins "
@@ -325,15 +349,28 @@ def label(column: str) -> str:
     return LABELS.get(column, column)
 
 
+def follow_causes(login: pl.DataFrame) -> None:
+    """Switch on a signal whose cause is on; put it back to its real value when its cause goes off again."""
+    state = st.session_state
+    forced = state["forced"]
+    for child, parents in IMPLIED_BY.items():  # e.g. a new network always means a new IP address
+        if any(state.get(_key(p)) for p in parents):
+            if not state.get(_key(child)):
+                state[_key(child)] = True
+                forced.add(child)
+        elif child in forced:  # its cause was switched off again: back to the real value
+            real = login[child][0]
+            state[_key(child)] = bool(real) if real is not None else False
+            forced.discard(child)
+
+
 def signal_panel(login: pl.DataFrame) -> pl.DataFrame:
     """Left column: every signal as a switch; returns the login with the switches applied."""
     if st.session_state.get("loaded") != int(login["event_id"][0]):
         load_signals(login)
     first_login = bool(login["prior_successes"][0] == 0)
     state = st.session_state
-    for child, parents in IMPLIED_BY.items():  # e.g. a new network always means a new IP address
-        if any(state.get(_key(p)) for p in parents):
-            state[_key(child)] = True
+    follow_causes(login)
 
     st.subheader("Signals")
     st.caption(
@@ -368,14 +405,13 @@ def apply_signals(login: pl.DataFrame, first_login: bool) -> pl.DataFrame:
     """
     state = st.session_state
     edited = login.clone()
-    values = context_values()
-    for name in CONTEXT:
-        wanted = bool(state[_key(name)])
-        if wanted != context_state(login, name):
-            edited = edited.with_columns(
-                pl.lit(value).cast(login[column].dtype).alias(column)
-                for column, value in values[name][wanted].items()
-            )
+    network, others = context_values()
+    wanted = tuple(bool(state[_key(n)]) for n in NETWORK)
+    if wanted != tuple(context_state(login, n) for n in NETWORK):
+        edited = _with_values(edited, network[wanted])
+    for name, values in others.items():
+        if bool(state[_key(name)]) != context_state(login, name):
+            edited = _with_values(edited, values[bool(state[_key(name)])])
     moved = False
     for column in SIGNALS:
         if column not in login.columns or (first_login and column in HISTORY_SIGNALS):
@@ -389,10 +425,13 @@ def apply_signals(login: pl.DataFrame, first_login: bool) -> pl.DataFrame:
         edited = edited.with_columns(
             pl.sum_horizontal(key).cast(pl.UInt8).alias("n_new_key_signals")
         )
-        hours = edited["hours_since_prev_success"][0]
-        if state.get(_key("country_change_1h")) and hours is not None and hours >= 1:
-            edited = edited.with_columns(pl.lit(TRAVEL_HOURS).alias("hours_since_prev_success"))
     return edited
+
+
+def _with_values(login: pl.DataFrame, values: Values) -> pl.DataFrame:
+    return login.with_columns(
+        pl.lit(value).cast(login[column].dtype).alias(column) for column, value in values.items()
+    )
 
 
 def changed_inputs(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> list[str]:
