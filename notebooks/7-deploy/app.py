@@ -84,7 +84,7 @@ CONTEXT = {  # thresholds sit between dev takeovers and dev legitimate logins (n
     ),
     "rare_country": Context(
         "Rare country: under 1% of all earlier logins",
-        ("global_share_country",),
+        ("global_share_country", "country"),  # the country is shown, not a model input
         pl.col("global_share_country") < 0.01,  # noqa: PLR2004
     ),
     "rare_browser": Context(
@@ -115,7 +115,7 @@ DEFINITIONS = {  # shown on hover; figures from the development side
     "rare_browser": "On: fewer than 0.1% of all earlier logins used this browser version. Moves together with "
     "the device type, so the browser always fits the device.",
     DEVICE: "Desktop, mobile or tablet. In development, 94 of the 112 takeovers were on a desktop: desktop "
-    "logins were about 9 times more often takeovers than mobile ones.",
+    "logins were about 10 times more often takeovers than mobile ones.",
     "attack_ip": "The IP address is on the dataset's list of addresses seen in credential attacks. It also "
     "sets the share of this IP's earlier attempts that were attacks (all of them, or none).",
     GAP: "Time since this account's previous successful login.",
@@ -125,8 +125,8 @@ DEFINITIONS = {  # shown on hover; figures from the development side
     "new_asn": "The account had never used this network (ASN).",
     "new_ip": "The account had never used this IP address.",
     "new_device_type": "The account had never used this device type.",
-    "new_os": "The account had never used this operating system.",
-    "new_browser": "The account had never used this browser.",
+    "new_os": "The account had never used this operating system version.",
+    "new_browser": "The account had never used this browser version.",
     "new_user_agent": "The account had never sent this exact browser identification string (user agent).",
     "country_change_1h": "The country differs from the previous login's, and that login was less than an "
     "hour earlier: a jump between countries a person can hardly make (impossible travel). Rare, but 8.5% "

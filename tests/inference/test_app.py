@@ -188,6 +188,22 @@ def test_a_released_switch_gets_back_the_viewers_value(
     assert app.toggle(key="signal-country_change_1h").value, "back to what the viewer had chosen"
 
 
+def test_a_switch_the_viewer_turns_on_stays_in_their_hands(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    app.select_slider(key="signal-gap").set_value("under an hour").run()
+    country = app.toggle(key="signal-new_country")
+    if country.disabled:  # fixed by a rule for this login: nothing to check
+        return
+    country.set_value(not country.value).run()
+    assert not app.exception, app.exception
+    assert not app.toggle(key="signal-new_country").disabled, (
+        "a rule must not lock the viewer's own choice"
+    )
+
+
 def test_device_type_reaches_the_model(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = _open(data_dir, monkeypatch)
     device = app.radio(key="signal-device_type")

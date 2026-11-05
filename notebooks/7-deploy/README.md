@@ -28,7 +28,7 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
       eight combinations occur in the test data). Device type and rare browser likewise describe one client, so
       changing either takes the device's and the browser's inputs from a login matching both (a browser that
       fits the device); all six combinations occur. In development, 94 of the 112 takeovers were on a desktop:
-      desktop logins were about 9 times more often takeovers than mobile ones.
+      desktop logins were about 10 times more often takeovers than mobile ones.
     - *Compared with the account's earlier logins:* the time since the previous login, then new country, region,
       city, network, IP address, device type, operating system, browser, exact user agent, and a country change
       within an hour. On an account's **first** login there is no earlier login to compare with, so these are
@@ -50,9 +50,11 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
       network with no earlier attack attempts has no attack-listed IP, and one whose earlier attempts all came
       from attack IPs has only attack-listed IPs.
 
-  Two more follow from the definitions when a *where from* control replaces a value: if the account had only one
-  earlier login, a different network, browser or device type is new for it; if it had used only one country, a
-  different country is new.
+  More follow from the definitions when a *where from* control replaces a value that was not new for the account:
+  if the account had only one earlier login, a different network, browser (and its operating system) or device
+  type (and its operating system and browser) is new for it; if it had used only one country, a different country
+  is new. And when the account had used only one country and its previous login was less than an hour earlier, a
+  country change is the same thing as a new country, so the travel switch follows "New country".
 - **Definitions on hover.** Every control has a "?" with a plain-language definition (and, when a rule greys it
   out, the reason).
 - **The login in detail** (collapsed): each scenario starts from one real test login (8 in all), and the controls

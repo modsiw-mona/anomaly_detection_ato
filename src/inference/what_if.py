@@ -17,9 +17,11 @@ logins, where the account-history signals exist):
   its network's, so an attack-listed IP needs a network with some attack history, and a network whose earlier
   attempts all came from attack IPs has only attack-listed IPs.
 
-Two more follow from the definitions when a *where from* control replaces a value: if the account had only one
-earlier login, a different network, browser or device type is new for it; if it had used only one country, a
-different country is new.
+Two more follow from the definitions when a *where from* control replaces a value that was not new for the
+account: if the account had only one earlier login, a different network, browser (and its OS) or device type
+(and its OS and browser) is new for it; if it had used only one country, a different country is new. When the
+account had used only one country and its previous login was less than an hour earlier, a country change is the
+same thing as a new country, so the travel switch follows "New country".
 
 On a first login the account-history signals do not exist, so no rule applies to them.
 """
@@ -73,11 +75,15 @@ NEW_COUNTRY_TRAVEL_REASON = (
     "A new country less than an hour after the previous login is a country change."
 )
 ONE_COUNTRY_REASON = "The account had used only one country, so another country is a new one."
+ONE_COUNTRY_TRAVEL_REASON = (
+    "The account had used only one country and its previous login was less than an hour earlier, so a "
+    "country change is exactly a new country: switch 'New country' instead."
+)
 SINGLE_LOGIN_REASON = "The account had one earlier login, so a different value is a new one."
 NEW_IF_MOVED = {  # where-from groups and the account-novelty signal of the value they replace
     "network": ("new_asn", "new_ip"),
-    "browser": ("new_browser",),
-    "device": ("new_device_type",),
+    "browser": ("new_browser", "new_os"),  # the replaced browser login brings its own OS
+    "device": ("new_device_type", "new_os", "new_browser"),  # and its own OS and browser
 }
 
 Required = dict[str, tuple[bool, str]]
@@ -142,13 +148,20 @@ def required_signals(  # noqa: C901, PLR0912 - one place for every rule, in the 
     for signal, columns in NEW_IF_NEVER_SEEN.items():
         if any(located[c][0] == 0 for c in columns if c in located.columns):
             fix(signal, True, NEVER_SEEN_REASON)
-    if login["prior_successes"][0] == 1:  # one earlier login: a different value is a new one
+
+    def was_known(signal: str) -> bool:  # the real value matched the account's earlier logins
+        return signal in login.columns and login[signal][0] is False
+
+    if (
+        login["prior_successes"][0] == 1
+    ):  # one earlier login: a value other than the real one is new
         for group, signals in NEW_IF_MOVED.items():
             if group in moved:
                 for signal in signals:
-                    fix(signal, True, SINGLE_LOGIN_REASON)
+                    if was_known(signal):
+                        fix(signal, True, SINGLE_LOGIN_REASON)
     one_country = "user_prior_countries" in login.columns and login["user_prior_countries"][0] == 1
-    if one_country and "country" in moved:
+    if one_country and "country" in moved and was_known("new_country"):
         fix("new_country", True, ONE_COUNTRY_REASON)
     if gap != TRAVEL_GAP:
         fix(TRAVEL, False, TRAVEL_REASON)
@@ -159,10 +172,10 @@ def required_signals(  # noqa: C901, PLR0912 - one place for every rule, in the 
             present = [c for c in causes if is_on(c)]
             if present and not unknown(login, signal):
                 added |= fix(signal, True, f"Always on when '{SIGNALS[present[0]]}' is on.")
-        if gap == TRAVEL_GAP and is_on("new_country"):
-            added |= fix(TRAVEL, True, NEW_COUNTRY_TRAVEL_REASON)
-        if one_country and is_on(TRAVEL):
-            added |= fix("new_country", True, ONE_COUNTRY_REASON)
+    if gap == TRAVEL_GAP and one_country:  # the previous login's country is the only earlier one
+        fix(TRAVEL, is_on("new_country"), ONE_COUNTRY_TRAVEL_REASON)
+    elif gap == TRAVEL_GAP and is_on("new_country"):
+        fix(TRAVEL, True, NEW_COUNTRY_TRAVEL_REASON)
     return required
 
 
