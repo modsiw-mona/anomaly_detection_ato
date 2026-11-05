@@ -15,6 +15,7 @@ from model.selection import train_supervised
 from tests.data.test_features import _config, _events, _random_events
 
 APP = Path(__file__).parents[2] / "notebooks" / "7-deploy" / "app.py"
+SCENARIO_LABELS = {"returning": "Returning account", "first": "First login of a new account"}
 
 
 @pytest.fixture(scope="module")
@@ -41,26 +42,86 @@ def data_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return root
 
 
-def test_demo_scores_a_login_and_reacts_to_what_if(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _open(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     monkeypatch.setenv("ATO_DATA_DIR", str(data_dir))
     st.cache_resource.clear()
     st.cache_data.clear()
     app = AppTest.from_file(str(APP), default_timeout=120).run()
     assert not app.exception, app.exception
+    return app
+
+
+def _choose(app: AppTest, scenario: str) -> bool:
+    """Open the first kind of outcome that offers ``scenario``; False if none does."""
+    for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
+        app.button(key=key).click().run()
+        radio = app.radio[0]
+        if SCENARIO_LABELS[scenario] in radio.options:
+            radio.set_value(scenario).run()
+            assert not app.exception, app.exception
+            return True
+    return False
+
+
+def test_demo_scores_a_scenario_and_reacts_to_signals(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
     assert app.metric[0].label == "Takeover score"
+    assert not app.metric[0].delta, "the real login, before any change, is not 'changed'"
+    assert not app.number_input, "scenarios are named, not numbered"
+    assert _choose(app, "returning")
+    labels = {t.label for t in app.toggle}
+    assert {
+        "New country", "New network (ASN)", "New IP address", "New exact user agent",
+        "IP address on an attack list", "Country changed within an hour of the previous login",
+        "Rare network (ASN): under 0.1% of all earlier logins", "Rare country: under 1% of all earlier logins",
+    } <= labels  # fmt: skip
+    assert "First successful login of this account" not in labels, "a fact, not a switch"
     before = app.metric[0].value
-    attack = next(t for t in app.toggle if t.label == "IP address on an attack list")
+    attack = app.toggle(key="signal-attack_ip")
     attack.set_value(not attack.value).run()
     assert not app.exception, app.exception
-    assert app.metric[0].value != before, "the what-if change reaches the model"
-    assert app.metric[0].delta is not None
+    assert app.metric[0].value != before, "the change reaches the model"
     assert app.metric[0].delta.lstrip("+-") != "0.0000 vs the real login"
-    labels = {t.label for t in app.toggle}
-    assert "First successful login of this account" not in labels, (
-        "a fact, shown in the table, not a switch"
+    app.button[-1].click().run()  # back to the real login
+    assert app.metric[0].value == before
+    assert not app.metric[0].delta
+
+
+def test_implied_signal_follows_its_cause(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    app.toggle(key="signal-new_asn").set_value(True).run()
+    assert not app.exception, app.exception
+    new_ip = app.toggle(key="signal-new_ip")
+    assert new_ip.value, "a new network always means a new IP address"
+    assert new_ip.disabled
+
+
+def test_where_from_switch_reaches_the_model(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    rare = app.toggle(key="signal-rare_network")
+    rare.set_value(not rare.value).run()
+    assert not app.exception, app.exception
+    moved = bool(app.metric[0].delta)
+    unmoved = any("do not move the score" in c.value for c in app.caption)
+    assert moved or unmoved, "the switch changes the login's network inputs"
+    why = app.table[0].value
+    assert "Share of all earlier logins from this network (ASN)" in why.to_string(), (
+        "changed inputs are listed in Why"
     )
+
+
+def test_first_login_greys_out_history_signals(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "first")
+    assert app.toggle(key="signal-new_country").disabled, "nothing to compare with yet"
+    assert not app.toggle(key="signal-attack_ip").disabled
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

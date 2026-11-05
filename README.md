@@ -84,9 +84,11 @@ A local [Streamlit](https://streamlit.io/) app scores a login with the selected 
     make demo
     ```
 
-Pick a kind of example in the sidebar (a takeover sent to review, one caught by step-up, a false alarm, an ordinary
-login), then switch a *What if…* signal to see the score and the response change. `?example=<review|step-up|false-alarm|ordinary>&n=<k>`
-in the URL opens a given example. Screenshots and details: [`notebooks/7-deploy/`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/7-deploy/README.md).
+Click a kind of outcome at the top (a takeover sent to review, one caught by step-up, a false alarm, an ordinary
+login) and a scenario (a returning account or an account's first login). Each scenario is a real test login. Every
+signal is a switch set to that login's real value: flip any of them to see the score, the response and the
+explanation change. `?example=<review|step-up|false-alarm|ordinary>&scenario=<returning|first>` in the URL opens a
+given scenario. Screenshots and details: [`notebooks/7-deploy/`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/7-deploy/README.md).
 
 ![Demo: a takeover sent to review](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/01-takeover-review.png)
 
