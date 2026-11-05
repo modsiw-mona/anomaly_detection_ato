@@ -1,4 +1,4 @@
-"""Evaluation protocol for extremely imbalanced takeover detection (development plan, section 5).
+"""Evaluation protocol for extremely imbalanced takeover detection.
 
 * **Folds** — repeated k-fold on the development side, **grouped by user** (all logins of a user in
   the same fold) and **stratified by label at user level** (takeover users spread evenly).

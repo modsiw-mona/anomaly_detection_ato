@@ -6,7 +6,7 @@
 * **Logistic regression** — the simplest trained model on the default features, used for learning
   and scalability curves. For speed it trains on every takeover plus a random share of legitimate
   logins, with **balanced class weights**; it is always *evaluated* on complete, unsampled folds
-  (development plan, section 5.2).
+  (see ``model.evaluation``).
 
   Weighting matters more than the model here. Re-weighting the sample back to the real class
   proportions (≈1 takeover per 70,000 logins) let the L2 penalty wash out the ~90 training takeovers:
