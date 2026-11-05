@@ -25,7 +25,10 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
       threshold; taking one real login, not a median per input, keeps the relations between its inputs (an IP
       never has more accounts or logins than its network). The three network switches describe one network, so
       flipping any of them takes all the network's inputs from a login matching all three switches at once (all
-      eight combinations occur in the test data). The device type sets the device and its share of all logins.
+      eight combinations occur in the test data). Device type and rare browser likewise describe one client, so
+      changing either takes the device's and the browser's inputs from a login matching both (a browser that
+      fits the device); all six combinations occur. In development, 94 of the 112 takeovers were on a desktop:
+      desktop logins were about 9 times more often takeovers than mobile ones.
     - *Compared with the account's earlier logins:* the time since the previous login, then new country, region,
       city, network, IP address, device type, operating system, browser, exact user agent, and a country change
       within an hour. On an account's **first** login there is no earlier login to compare with, so these are
@@ -50,7 +53,12 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
   Two more follow from the definitions when a *where from* control replaces a value: if the account had only one
   earlier login, a different network, browser or device type is new for it; if it had used only one country, a
   different country is new.
-- **Login details** (collapsed): the real login's facts, for reference; they do not change with the controls.
+- **Definitions on hover.** Every control has a "?" with a plain-language definition (and, when a rule greys it
+  out, the reason).
+- **The login in detail** (collapsed): each scenario starts from one real test login (8 in all), and the controls
+  make a what-if version of it. This table shows both side by side, "real login" and "with your changes", so the
+  login id stays the same while the inputs you changed differ. The score change reads "from the real login's"
+  score.
 - **Plain-language names:** every input on screen is shown by what it means (e.g. "Share of all earlier logins
   from this country"); the login id, in *Login details*, is shown for reference only and is not a model input.
 
@@ -58,8 +66,8 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 than what is new for the account. Turning *rare network* off brings the first-login takeover from 0.74 to 0.02 and
 the returning-account one from 0.59 to 0.03 (review / block to step-up); turning *most attempts from attack IPs*
 off brings the returning-account one to allow; turning off all five *where from* switches makes either look
-ordinary (allow). The device type matters too (the returning-account takeover from desktop to mobile: 0.59 to
-0.13). The account-novelty switches move scores less: on the ordinary returning-account scenario no combination
+ordinary (allow). The device type matters too: the returning-account takeover on a mobile instead of a desktop
+(with a browser that fits it) drops from 0.59 to 0.02. The account-novelty switches move scores less: on the ordinary returning-account scenario no combination
 of them changes the response. Novelty is common in legitimate traffic too: 43% of legitimate returning-account
 logins in development bring a new country, network, device type, operating system or browser for the account
 (41% a new IP address), against 86% of the 71 returning-account takeover logins.

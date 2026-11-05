@@ -83,7 +83,8 @@ def test_demo_scores_a_scenario_and_reacts_to_signals(
     attack.set_value(not attack.value).run()
     assert not app.exception, app.exception
     assert app.metric[0].value != before, "the change reaches the model"
-    assert app.metric[0].delta.lstrip("+-") != "0.0000 vs the real login"
+    assert not app.metric[0].delta.lstrip("+-").startswith("0.0000")
+    assert app.metric[0].delta.endswith(f"from the real login's {before}")
     app.button[-1].click().run()  # back to the real login
     assert app.metric[0].value == before
     assert not app.metric[0].delta
@@ -190,13 +191,17 @@ def test_a_released_switch_gets_back_the_viewers_value(
 def test_device_type_reaches_the_model(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = _open(data_dir, monkeypatch)
     device = app.radio(key="signal-device_type")
-    other = next(d for d in ("desktop", "mobile", "tablet") if d != device.value)
+    real = device.value
+    other = next(d for d in ("desktop", "mobile", "tablet") if d != real)
     device.set_value(other).run()
     assert not app.exception, app.exception
-    why = app.table[-1].value
-    assert why.iloc[0]["input"].startswith(
-        ("Device type", "Share of all earlier logins with this device")
-    )
+    client_inputs = (
+        "Device type", "Share of all earlier logins with this", "Accounts seen with this exact user agent",
+    )  # fmt: skip
+    assert app.table[-1].value.iloc[0]["input"].startswith(client_inputs)
+    detail = app.table[0].value  # the login in detail: real and with your changes
+    row = detail[detail["field"] == "Device type"].iloc[0]
+    assert (row["real login"], row["with your changes"]) == (real, other)
 
 
 def test_first_login_greys_out_history_signals(
@@ -206,6 +211,17 @@ def test_first_login_greys_out_history_signals(
     assert _choose(app, "first")
     assert app.toggle(key="signal-new_country").disabled, "nothing to compare with yet"
     assert not app.select_slider, "no previous login, so no time since it"
+
+
+def test_every_control_has_a_definition(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    controls = [
+        *app.toggle,
+        app.radio(key="signal-device_type"),
+        app.select_slider(key="signal-gap"),
+    ]
+    assert all(c.help for c in controls), [c.label for c in controls if not c.help]
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
