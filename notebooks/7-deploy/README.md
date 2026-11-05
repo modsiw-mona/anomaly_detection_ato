@@ -19,9 +19,11 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
     - *Where the login comes from:* rare network (under 0.1% of all earlier logins), network barely active in the
       previous 24 hours (under 50 attempts), most of the network's earlier attempts from attack IPs, rare country
       (under 1%), rare browser (under 0.1%), and an attack-listed IP. Each of the first five moves a group of
-      inputs at once (for example, rare network moves the network's and the IP's share of all logins and the
-      number of accounts seen on them): flipping it replaces that group with the median values of the test
-      logins on the other side of the threshold. The thresholds sit between development takeovers and
+      inputs at once: flipping it replaces that group with the median values of the test logins on the other
+      side of the threshold. The three network switches describe one network, so flipping any of them replaces
+      all the network's inputs (its share of all logins, accounts seen on it, its activity in the previous 24
+      hours, its attack and failure history) with the medians of the test logins that match all three switches
+      at once; all eight combinations occur in the test data. The thresholds sit between development takeovers and
       development legitimate logins (for example, 90% of development takeovers come from networks with under
       0.05% of all logins; 90% of legitimate logins, from networks with more than 0.13%).
     - *Compared with the account's earlier logins:* new country, region, city, network, IP address, device type,
@@ -32,12 +34,14 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 - **Plain-language names:** every input on screen is shown by what it means (e.g. "Share of all earlier logins
   from this country"); the login id, in *Login details*, is shown for reference only and is not a model input.
 
-**What the switches show about the model.** Where a login comes from weighs far more than what is new for the
-account. Turning *rare network* off moves the review / block takeover from 0.59 to 0.03 (still step-up); turning
-off all five *where from* switches makes it look ordinary (allow). The account-novelty switches move scores much
-less: on the ordinary returning-account scenario no combination of them changes the response. Novelty is common
-in legitimate traffic too: 43% of legitimate returning-account logins in development bring a new network, device
-type, operating system or browser for the account (41% a new IP address), against 86% of takeovers.
+**What the switches show about the model.** On these scenarios, where a login comes from moves the score more
+than what is new for the account. Turning *rare network* off brings the first-login takeover from 0.74 to 0.03
+(review / block to step-up) and the returning-account one from 0.59 to 0.05; turning off all five *where from*
+switches makes either look ordinary (allow). The account-novelty switches move scores less: on the ordinary
+returning-account scenario no combination of them changes the response. Novelty is common in legitimate traffic
+too: 43% of legitimate returning-account logins in development bring a new country, network, device type,
+operating system or browser for the account (41% a new IP address), against 86% of the 71 returning-account
+takeover logins.
 
 **Why not a form or a CSV upload?** The course's reference demo scores one row typed in a form, or a batch from a
 CSV. Here a login's features describe it *against the account's history and all earlier traffic* (novelty, rarity,
@@ -46,17 +50,18 @@ model never saw, and lets you change their signals.
 
 The model receives the data and produces predictions correctly: `tests/inference/` checks thresholds, tiers,
 loading, explanations and value formatting, and runs the whole app with Streamlit's test runner on a toy data
-directory (`tests/inference/test_app.py`): switches reach the model, implied signals follow their cause, a first
-login greys out the history signals, and "back to the real login" restores the original score.
+directory (`tests/inference/test_app.py`): switches reach the model and the changed inputs are listed first,
+implied signals follow their cause and return to their real value when it is switched off, a first login greys out
+the history signals, and "back to the real login" restores the original score.
 
 ## Evidence
 
 | | |
 | --- | --- |
 | ![Takeover sent to review / block](screenshots/01-takeover-review.png) | **Takeover sent to review / block (returning account).** Three earlier logins; this one comes from a rare network, quiet in the previous 24 hours, with a 70% attack-IP history, from a rare country and browser. |
-| ![Rare network switched off](screenshots/02-rare-network-off.png) | **The same takeover, rare network switched off.** The score drops from 0.59 to 0.03 and the response from review / block to step-up; the changed inputs are listed first under *Why*. |
-| ![Legitimate login flagged](screenshots/03-false-alarm.png) | **False alarm (returning account).** A legitimate login sent to step-up although none of the *where from* switches is on: the score comes from a combination of smaller signals. |
-| ![First login of a new account](screenshots/04-first-login.png) | **Takeover on a new account's first login.** There is no earlier login to compare with, so the account-history signals are greyed out; the score comes from where the login comes from. |
+| ![Takeover on a first login](screenshots/02-first-login.png) | **Takeover on a new account's first login.** There is no earlier login to compare with, so the account-history signals are greyed out; the score comes from where the login comes from. |
+| ![Rare network switched off](screenshots/03-rare-network-off.png) | **The same first-login takeover, rare network switched off.** The network's inputs move together to those of a common, quiet, attack-heavy network; the score drops from 0.74 to 0.03 and the response from review / block to step-up. The changed inputs are listed first under *Why*. |
+| ![Legitimate login flagged](screenshots/04-false-alarm.png) | **False alarm (returning account).** A legitimate login sent to step-up although none of the *where from* switches is on: the score comes from a combination of smaller signals. |
 
 Screenshots taken from the running app with headless Chrome (temporary profile) on 2026-11-04. The demo binds to
 `127.0.0.1` with Streamlit's usage statistics off, both in `make demo` and in `.streamlit/config.toml`.

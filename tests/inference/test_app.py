@@ -109,10 +109,44 @@ def test_where_from_switch_reaches_the_model(
     moved = bool(app.metric[0].delta)
     unmoved = any("do not move the score" in c.value for c in app.caption)
     assert moved or unmoved, "the switch changes the login's network inputs"
-    why = app.table[0].value
-    assert "Share of all earlier logins from this network (ASN)" in why.to_string(), (
-        "changed inputs are listed in Why"
-    )
+    why = app.table[-1].value  # the right column (Why) is drawn after the login details
+    network_inputs = {
+        "Share of all earlier logins from this network (ASN)",
+        "Share of all earlier logins from this IP",
+        "Accounts seen on this network before",
+        "Accounts seen on this IP before",
+        "Attempts from this network in the previous 24 hours",
+        "Failed attempts from this network in the previous 24 hours",
+        "Share of this network's earlier attempts from attack IPs",
+        "Share of this network's earlier attempts that failed",
+        "Share of this IP's earlier attempts from attack IPs",
+        "Share of this IP's earlier attempts that failed",
+    }
+    assert why.iloc[0]["input"] in network_inputs, "changed network inputs are listed first in Why"
+
+
+def test_undoing_a_cause_restores_the_implied_signal(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    before = app.toggle(key="signal-new_ip").value
+    real_asn = app.toggle(key="signal-new_asn").value
+    app.toggle(key="signal-new_asn").set_value(not real_asn).run()
+    app.toggle(key="signal-new_asn").set_value(real_asn).run()
+    assert not app.exception, app.exception
+    assert app.toggle(key="signal-new_ip").value == before
+    assert not app.metric[0].delta, "switching a signal on and off again is no change"
+
+
+def test_changed_signal_is_listed_first(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    travel = app.toggle(key="signal-country_change_1h")
+    travel.set_value(not travel.value).run()
+    assert not app.exception, app.exception
+    why = app.table[-1].value
+    assert why.iloc[0]["input"] == "Country changed within an hour of the previous login"
 
 
 def test_first_login_greys_out_history_signals(
