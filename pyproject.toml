@@ -20,6 +20,7 @@ dependencies = [
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
     "shap>=0.54.1",
+    "streamlit>=1.66.1",
     "xgboost>=3.4.1 ; sys_platform != 'linux'",
     "xgboost-cpu>=3.4.1 ; sys_platform == 'linux'",
 ]
