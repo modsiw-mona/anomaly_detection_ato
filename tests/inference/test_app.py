@@ -142,11 +142,46 @@ def test_undoing_a_cause_restores_the_implied_signal(
 def test_changed_signal_is_listed_first(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
+    app.select_slider(key="signal-gap").set_value("under an hour").run()  # travel needs this
     travel = app.toggle(key="signal-country_change_1h")
+    assert not travel.disabled
     travel.set_value(not travel.value).run()
     assert not app.exception, app.exception
+    top = set(
+        app.table[-1].value["input"].head(2)
+    )  # the two changed inputs: travel and the time gap
+    assert top == {
+        "Country changed within an hour of the previous login",
+        "Hours since the account's previous login",
+    }
+
+
+def test_travel_switch_follows_the_previous_login(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    app.select_slider(key="signal-gap").set_value("under an hour").run()
+    app.toggle(key="signal-country_change_1h").set_value(True).run()
+    app.select_slider(key="signal-gap").set_value("over a month").run()
+    assert not app.exception, app.exception
+    travel = app.toggle(key="signal-country_change_1h")
+    assert travel.disabled, (
+        "no country change within an hour when the previous login is a month old"
+    )
+    assert not travel.value
+
+
+def test_device_type_reaches_the_model(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _open(data_dir, monkeypatch)
+    device = app.radio(key="signal-device_type")
+    other = next(d for d in ("desktop", "mobile", "tablet") if d != device.value)
+    device.set_value(other).run()
+    assert not app.exception, app.exception
     why = app.table[-1].value
-    assert why.iloc[0]["input"] == "Country changed within an hour of the previous login"
+    assert why.iloc[0]["input"].startswith(
+        ("Device type", "Share of all earlier logins with this device")
+    )
 
 
 def test_first_login_greys_out_history_signals(
