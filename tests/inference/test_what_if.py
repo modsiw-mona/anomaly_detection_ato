@@ -88,11 +88,28 @@ def test_new_country_soon_after_the_previous_login_is_travel() -> None:
     assert required["country_change_1h"][0] is True
 
 
-def test_with_one_earlier_country_travel_means_a_new_country() -> None:
+def test_with_one_earlier_country_travel_follows_new_country() -> None:
     login = _login(user_prior_countries=1)
-    required = required_signals(login, login, {"country_change_1h": True}, TRAVEL_GAP)
-    assert required["new_country"][0] is True
-    assert required["new_region"][0] is True, "and its implied signals"
+    on = required_signals(login, login, {"new_country": True}, TRAVEL_GAP)
+    assert on["country_change_1h"][0] is True
+    assert on["new_region"][0] is True
+    off = required_signals(login, login, {"country_change_1h": True}, TRAVEL_GAP)
+    assert off["country_change_1h"][0] is False, "no new country, so no country change"
+
+
+@pytest.mark.parametrize("countries", [1, 2])
+@pytest.mark.parametrize("gap", [TRAVEL_GAP, "1 day to 1 week"])
+def test_new_country_turned_on_by_the_viewer_is_never_locked(countries: int, gap: str) -> None:
+    login = _login(user_prior_countries=countries)
+    assert "new_country" not in required_signals(login, login, {"new_country": True}, gap)
+
+
+def test_travel_turned_on_by_the_viewer_stays_free_when_it_can_happen() -> None:
+    """Several earlier countries and a recent previous login: travel to a known country is possible."""
+    login = _login(user_prior_countries=2)
+    assert "country_change_1h" not in required_signals(
+        login, login, {"country_change_1h": True}, TRAVEL_GAP
+    )
 
 
 def test_attack_ip_must_agree_with_its_network() -> None:
@@ -106,16 +123,23 @@ def test_attack_ip_must_agree_with_its_network() -> None:
 
 @pytest.mark.parametrize(
     ("group", "signals"),
-    [("network", {"new_asn", "new_ip"}), ("browser", {"new_browser", "new_user_agent"}),
-     ("device", {"new_device_type", "new_user_agent"})],
+    [("network", {"new_asn", "new_ip"}), ("browser", {"new_browser", "new_os", "new_user_agent"}),
+     ("device", {"new_device_type", "new_os", "new_browser", "new_user_agent"})],
 )  # fmt: skip
 def test_with_one_earlier_login_a_replaced_value_is_new(group: str, signals: set[str]) -> None:
     login = _login(prior_successes=1)
     required = required_signals(login, login, {}, None, {group})
-    assert {s for s, (value, _) in required.items() if value} >= signals
+    assert {s for s, (value, _) in required.items() if value} == signals
     assert not {
         s for s, (v, _) in required_signals(_login(), _login(), {}, None, {group}).items() if v
     }
+
+
+def test_a_replaced_value_is_not_forced_new_when_the_real_one_was_new() -> None:
+    """The real value was already new, so the replacement could be the earlier one."""
+    login = _login(prior_successes=1, new_device_type=True)
+    required = required_signals(login, login, {"new_device_type": True}, None, {"device"})
+    assert "new_device_type" not in required
 
 
 def test_with_one_earlier_country_a_replaced_country_is_new() -> None:
