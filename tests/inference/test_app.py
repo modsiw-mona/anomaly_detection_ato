@@ -172,6 +172,21 @@ def test_travel_switch_follows_the_previous_login(
     assert not travel.value
 
 
+def test_a_released_switch_gets_back_the_viewers_value(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    app.select_slider(key="signal-gap").set_value("under an hour").run()
+    app.toggle(key="signal-country_change_1h").set_value(True).run()  # the viewer's choice
+    app.select_slider(key="signal-gap").set_value("over a month").run()  # a rule turns it off
+    app.select_slider(key="signal-gap").set_value(
+        "under an hour"
+    ).run()  # the rule no longer applies
+    assert not app.exception, app.exception
+    assert app.toggle(key="signal-country_change_1h").value, "back to what the viewer had chosen"
+
+
 def test_device_type_reaches_the_model(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = _open(data_dir, monkeypatch)
     device = app.radio(key="signal-device_type")
@@ -190,7 +205,7 @@ def test_first_login_greys_out_history_signals(
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "first")
     assert app.toggle(key="signal-new_country").disabled, "nothing to compare with yet"
-    assert not app.toggle(key="signal-attack_ip").disabled
+    assert not app.select_slider, "no previous login, so no time since it"
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

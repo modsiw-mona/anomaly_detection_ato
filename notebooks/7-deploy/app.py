@@ -5,14 +5,15 @@ Run from the repository root (after ``make data intermediate features split`` an
     make demo
 
 Scenarios are real logins from the **test side** of the split (users the model never saw): for each kind
-of outcome (takeover sent to review, takeover sent to step-up, false alarm, ordinary login) the demo
+of outcome (takeover sent to review, takeover sent to step-up, takeover missed when there is one, false alarm,
+ordinary login) the demo
 offers a returning account and an account's first login, each the median-score login of its group.
 
-Every signal is a switch set to the scenario's real value. *Where the login comes from* switches move a
-group of inputs at once (for example, "rare network" moves the network's share of all logins and the
-number of accounts seen on it): switching one replaces that group with the typical (median) values of
-test logins on the other side of the threshold. *Compared with the account's earlier logins* switches
-are the account-novelty flags themselves.
+Every signal is a control set to the scenario's real value. *Where the login comes from* switches move a
+group of inputs at once: switching one replaces that group with the inputs of one real typical test login on
+the other side of the threshold, so the relations between them hold. *Compared with the account's earlier
+logins* controls are the time since the previous login and the account-novelty flags. Rules between signals
+(``inference.what_if``) fix the signals that must follow from the others; those are greyed out with the reason.
 """
 
 import copy
@@ -324,7 +325,7 @@ def load_signals(login: pl.DataFrame) -> None:
             state[_key(column)] = _real(login, column)
     state[_key(DEVICE)] = login[DEVICE][0]
     state[_key(GAP)] = gap_of(login["hours_since_prev_success"][0])
-    state["forced"] = {}  # signal -> value a rule set it to
+    state["forced"] = {}  # signal -> the value the viewer had given it before a rule fixed it
     state["loaded"] = int(login["event_id"][0])
 
 
@@ -411,23 +412,39 @@ def locate(login: pl.DataFrame) -> pl.DataFrame:
 
 
 def current_required(login: pl.DataFrame, located: pl.DataFrame) -> dict[str, tuple[bool, str]]:
-    """The signals the rules fix for the current controls (see ``inference.what_if``)."""
-    state = st.session_state
-    switches = {signal: bool(state.get(_key(signal))) for signal in SIGNALS}
-    return required_signals(login, located, switches, state.get(_key(GAP)))
+    """The signals the rules fix for the current controls (see ``inference.what_if``).
 
-
-def follow_rules(login: pl.DataFrame, required: dict[str, tuple[bool, str]]) -> None:
-    """Set the signals a rule fixes; put a signal back to its real value once no rule fixes it any more."""
+    A signal a rule forced counts with the value the viewer had given it, so a rule never feeds itself.
+    """
     state = st.session_state
     forced = state["forced"]
+    switches = {
+        signal: forced[signal] if signal in forced else bool(state.get(_key(signal)))
+        for signal in SIGNALS
+    }
+    moved = {
+        "network": tuple(bool(state[_key(n)]) for n in NETWORK)
+        != tuple(context_state(login, n) for n in NETWORK),
+        "country": bool(state[_key("rare_country")]) != context_state(login, "rare_country"),
+        "browser": bool(state[_key("rare_browser")]) != context_state(login, "rare_browser"),
+        "device": state[_key(DEVICE)] != login[DEVICE][0],
+    }
+    return required_signals(
+        login, located, switches, state.get(_key(GAP)), {g for g, m in moved.items() if m}
+    )
+
+
+def follow_rules(required: dict[str, tuple[bool, str]]) -> None:
+    """Set the signals a rule fixes; give a signal back the viewer's value once no rule fixes it any more."""
+    state = st.session_state
+    forced = state["forced"]  # signal -> the value the viewer had given it
     for signal, (value, _reason) in required.items():
-        if state.get(_key(signal)) != value:
-            state[_key(signal)] = value
-            forced[signal] = value
+        current = bool(state.get(_key(signal)))
+        if signal not in forced and current != value:
+            forced[signal] = current
+        state[_key(signal)] = value
     for signal in [s for s in forced if s not in required]:
-        state[_key(signal)] = _real(login, signal)
-        del forced[signal]
+        state[_key(signal)] = forced.pop(signal)
 
 
 def signal_panel(login: pl.DataFrame) -> pl.DataFrame:
@@ -437,7 +454,7 @@ def signal_panel(login: pl.DataFrame) -> pl.DataFrame:
     first_login = bool(login["prior_successes"][0] == 0)
     located = locate(login)
     required = current_required(login, located)
-    follow_rules(login, required)
+    follow_rules(required)
 
     st.subheader("Signals")
     st.caption(
@@ -450,7 +467,8 @@ def signal_panel(login: pl.DataFrame) -> pl.DataFrame:
     st.radio("Device type", devices, horizontal=True, key=_key(DEVICE))
     for column, text in NETWORK_SIGNALS.items():
         if column in login.columns:
-            st.toggle(text, key=_key(column))
+            fixed = required[column][1] if column in required else None
+            st.toggle(text, key=_key(column), disabled=fixed is not None, help=fixed)
     st.markdown("**Compared with the account's earlier logins**")
     if first_login:
         st.caption(

@@ -30,18 +30,26 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
       city, network, IP address, device type, operating system, browser, exact user agent, and a country change
       within an hour. On an account's **first** login there is no earlier login to compare with, so these are
       greyed out.
-- **Rules between signals.** A control a rule fixes is greyed out and shows why on hover; it goes back to its
-  real value when the rule no longer applies, and "Back to the real login" resets everything. Each rule holds
-  without exception in the RBA data (`src/inference/what_if.py`; `tests/inference/test_what_if.py` checks them
-  on the feature table):
+- **Rules between signals.** A control a rule fixes is greyed out and shows why on hover; once the rule no longer
+  applies it gets back the value the viewer had given it, and "Back to the real login" resets everything. Rules
+  are applied until they all agree (`src/inference/what_if.py`). Each holds without exception on the 7.1 million
+  returning-account logins of the RBA feature table, and `tests/inference/test_what_if.py` checks them there:
     - something nobody had used before (country, network, IP, device type, operating system, browser, user agent)
       is new for this account too;
     - a new network means a new IP address; a new device type, operating system or browser means a new user
       agent; a new country means a new region when the region is known (no rule when the region or city is
       unknown);
-    - a country change within an hour needs the previous login less than an hour earlier;
+    - a country change within an hour needs the previous login less than an hour earlier; a new country less
+      than an hour after the previous login is a country change; if the account had used only one country, a
+      country change is a new country;
     - every earlier attempt from an attack-listed IP is an attack attempt, and none from another IP, so the
-      attack-IP switch also sets that IP's attack history.
+      attack-IP switch also sets that IP's attack history; an IP's attempts are part of its network's, so a
+      network with no earlier attack attempts has no attack-listed IP, and one whose earlier attempts all came
+      from attack IPs has only attack-listed IPs.
+
+  Two more follow from the definitions when a *where from* control replaces a value: if the account had only one
+  earlier login, a different network, browser or device type is new for it; if it had used only one country, a
+  different country is new.
 - **Login details** (collapsed): the real login's facts, for reference; they do not change with the controls.
 - **Plain-language names:** every input on screen is shown by what it means (e.g. "Share of all earlier logins
   from this country"); the login id, in *Login details*, is shown for reference only and is not a model input.
@@ -65,9 +73,10 @@ The model receives the data and produces predictions correctly: `tests/inference
 loading, explanations and value formatting, and runs the whole app with Streamlit's test runner on a toy data
 directory (`tests/inference/test_app.py`): switches reach the model and the changed inputs are listed first,
 implied signals follow their cause and return to their real value when it is switched off, the travel switch
-follows the time since the previous login, the device type reaches the model, a first login greys out the history
+follows the time since the previous login and gets back the viewer's value when the rule no longer applies, the
+device type reaches the model, a first login greys out the history
 signals, and "back to the real login" restores the original score. On the real data, every scenario was also
-driven through 40 random control changes: no rule was broken and every reset restored the original score.
+driven through 60 random control changes: no rule was broken and every reset restored the original score.
 
 ## Evidence
 
