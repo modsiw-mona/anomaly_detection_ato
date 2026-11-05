@@ -9,15 +9,22 @@ logins, where the account-history signals exist):
 * **Always together.** A new network means a new IP address; a new device type, operating system or browser
   means a new user agent string. A new country means a new region when the region is known: this one comes
   from the data's geography (a region belongs to one country), not from how the features are computed.
-* **Travel needs a recent previous login.** A country change within an hour needs the previous login less
-  than an hour earlier.
+* **Travel.** A country change within an hour needs the previous login less than an hour earlier; a new
+  country less than an hour after the previous login is a country change; if the account had used only one
+  country, a country change is a new country.
 * **Attack-listed IP.** Every earlier attempt from an attack-listed IP is an attack attempt (share 1), and
-  none from another IP (share 0); an IP never seen before has no share.
+  none from another IP (share 0); an IP never seen before has no share. An IP's earlier attempts are part of
+  its network's, so an attack-listed IP needs a network with some attack history, and a network whose earlier
+  attempts all came from attack IPs has only attack-listed IPs.
+
+Two more follow from the definitions when a *where from* control replaces a value: if the account had only one
+earlier login, a different network, browser or device type is new for it; if it had used only one country, a
+different country is new.
 
 On a first login the account-history signals do not exist, so no rule applies to them.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 import polars as pl
 
@@ -62,6 +69,16 @@ TRAVEL_GAP = "under an hour"
 ATTACK_SHARE = "ip_prior_attack_share"
 NEVER_SEEN_REASON = "Nobody had used it before, so it is new for this account too."
 TRAVEL_REASON = "Needs the previous login less than an hour earlier."
+NEW_COUNTRY_TRAVEL_REASON = (
+    "A new country less than an hour after the previous login is a country change."
+)
+ONE_COUNTRY_REASON = "The account had used only one country, so another country is a new one."
+SINGLE_LOGIN_REASON = "The account had one earlier login, so a different value is a new one."
+NEW_IF_MOVED = {  # where-from groups and the account-novelty signal of the value they replace
+    "network": ("new_asn", "new_ip"),
+    "browser": ("new_browser",),
+    "device": ("new_device_type",),
+}
 
 Required = dict[str, tuple[bool, str]]
 
@@ -79,35 +96,73 @@ def unknown(login: pl.DataFrame, signal: str) -> bool:
     return column is not None and column in login.columns and bool(login[column][0])
 
 
-def required_signals(
-    login: pl.DataFrame, located: pl.DataFrame, switches: Mapping[str, bool], gap: str | None
+def required_signals(  # noqa: C901, PLR0912 - one place for every rule, in the order they apply
+    login: pl.DataFrame,
+    located: pl.DataFrame,
+    switches: Mapping[str, bool],
+    gap: str | None,
+    moved: Collection[str] = (),
 ) -> Required:
-    """History signals a rule fixes, with the value and the reason.
+    """Signals a rule fixes, with the value and the reason.
 
-    ``login`` is the real login, ``located`` the login after the *where from* controls (network, country,
-    browser, device), ``switches`` the current signal switches and ``gap`` the chosen time since the
-    previous login.
+    ``login`` is the real login; ``located`` the login after the *where from* controls; ``switches`` the
+    viewer's own switch values (a value a rule forced must not be passed here, so a rule never feeds itself);
+    ``gap`` the chosen time since the previous login; ``moved`` the *where from* groups whose value the viewer
+    changed (``network``, ``country``, ``browser``, ``device``). Rules are applied until none adds anything.
     """
-    if login["prior_successes"][0] == 0:
-        return {}
     required: Required = {}
 
     def is_on(signal: str) -> bool:
         return required[signal][0] if signal in required else bool(switches.get(signal))
 
+    def fix(signal: str, value: bool, reason: str) -> bool:
+        if signal not in login.columns or signal in required:
+            return False
+        required[signal] = (value, reason)
+        return True
+
+    # An IP's earlier attempts are part of its network's: an attack-listed IP needs a network with some attack
+    # history, and a network with only attack attempts has only attack-listed IPs (for an IP seen before).
+    if ATTACK_SHARE in located.columns and located[ATTACK_SHARE][0] is not None:
+        network_share = located["asn_prior_attack_share"][0]
+        if network_share == 0:
+            fix(
+                "attack_ip",
+                False,
+                "This network had no attack attempts before, so its IPs are not on the list.",
+            )
+        elif network_share == 1:
+            fix(
+                "attack_ip",
+                True,
+                "Every earlier attempt from this network came from attack-listed IPs.",
+            )
+    if login["prior_successes"][0] == 0:
+        return required  # no account history: the history signals do not exist
     for signal, columns in NEW_IF_NEVER_SEEN.items():
-        if signal in login.columns and any(
-            located[c][0] == 0 for c in columns if c in located.columns
-        ):
-            required[signal] = (True, NEVER_SEEN_REASON)
-    for signal, causes in IMPLIED_BY.items():
-        if signal in required or signal not in login.columns or unknown(login, signal):
-            continue
-        present = [c for c in causes if is_on(c)]
-        if present:
-            required[signal] = (True, f"Always on when '{SIGNALS[present[0]]}' is on.")
-    if TRAVEL in login.columns and gap != TRAVEL_GAP:
-        required[TRAVEL] = (False, TRAVEL_REASON)
+        if any(located[c][0] == 0 for c in columns if c in located.columns):
+            fix(signal, True, NEVER_SEEN_REASON)
+    if login["prior_successes"][0] == 1:  # one earlier login: a different value is a new one
+        for group, signals in NEW_IF_MOVED.items():
+            if group in moved:
+                for signal in signals:
+                    fix(signal, True, SINGLE_LOGIN_REASON)
+    one_country = "user_prior_countries" in login.columns and login["user_prior_countries"][0] == 1
+    if one_country and "country" in moved:
+        fix("new_country", True, ONE_COUNTRY_REASON)
+    if gap != TRAVEL_GAP:
+        fix(TRAVEL, False, TRAVEL_REASON)
+    added = True
+    while added:  # rules that depend on each other, until nothing changes
+        added = False
+        for signal, causes in IMPLIED_BY.items():
+            present = [c for c in causes if is_on(c)]
+            if present and not unknown(login, signal):
+                added |= fix(signal, True, f"Always on when '{SIGNALS[present[0]]}' is on.")
+        if gap == TRAVEL_GAP and is_on("new_country"):
+            added |= fix(TRAVEL, True, NEW_COUNTRY_TRAVEL_REASON)
+        if one_country and is_on(TRAVEL):
+            added |= fix("new_country", True, ONE_COUNTRY_REASON)
     return required
 
 

@@ -25,24 +25,40 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
       threshold; taking one real login, not a median per input, keeps the relations between its inputs (an IP
       never has more accounts or logins than its network). The three network switches describe one network, so
       flipping any of them takes all the network's inputs from a login matching all three switches at once (all
-      eight combinations occur in the test data). The device type sets the device and its share of all logins.
+      eight combinations occur in the test data). Device type and rare browser likewise describe one client, so
+      changing either takes the device's and the browser's inputs from a login matching both (a browser that
+      fits the device); all six combinations occur. In development, 94 of the 112 takeovers were on a desktop:
+      desktop logins were about 9 times more often takeovers than mobile ones.
     - *Compared with the account's earlier logins:* the time since the previous login, then new country, region,
       city, network, IP address, device type, operating system, browser, exact user agent, and a country change
       within an hour. On an account's **first** login there is no earlier login to compare with, so these are
       greyed out.
-- **Rules between signals.** A control a rule fixes is greyed out and shows why on hover; it goes back to its
-  real value when the rule no longer applies, and "Back to the real login" resets everything. Each rule holds
-  without exception in the RBA data (`src/inference/what_if.py`; `tests/inference/test_what_if.py` checks them
-  on the feature table):
+- **Rules between signals.** A control a rule fixes is greyed out and shows why on hover; once the rule no longer
+  applies it gets back the value the viewer had given it, and "Back to the real login" resets everything. Rules
+  are applied until they all agree (`src/inference/what_if.py`). Each holds without exception on the 7.1 million
+  returning-account logins of the RBA feature table, and `tests/inference/test_what_if.py` checks them there:
     - something nobody had used before (country, network, IP, device type, operating system, browser, user agent)
       is new for this account too;
     - a new network means a new IP address; a new device type, operating system or browser means a new user
       agent; a new country means a new region when the region is known (no rule when the region or city is
       unknown);
-    - a country change within an hour needs the previous login less than an hour earlier;
+    - a country change within an hour needs the previous login less than an hour earlier; a new country less
+      than an hour after the previous login is a country change; if the account had used only one country, a
+      country change is a new country;
     - every earlier attempt from an attack-listed IP is an attack attempt, and none from another IP, so the
-      attack-IP switch also sets that IP's attack history.
-- **Login details** (collapsed): the real login's facts, for reference; they do not change with the controls.
+      attack-IP switch also sets that IP's attack history; an IP's attempts are part of its network's, so a
+      network with no earlier attack attempts has no attack-listed IP, and one whose earlier attempts all came
+      from attack IPs has only attack-listed IPs.
+
+  Two more follow from the definitions when a *where from* control replaces a value: if the account had only one
+  earlier login, a different network, browser or device type is new for it; if it had used only one country, a
+  different country is new.
+- **Definitions on hover.** Every control has a "?" with a plain-language definition (and, when a rule greys it
+  out, the reason).
+- **The login in detail** (collapsed): each scenario starts from one real test login (8 in all), and the controls
+  make a what-if version of it. This table shows both side by side, "real login" and "with your changes", so the
+  login id stays the same while the inputs you changed differ. The score change reads "from the real login's"
+  score.
 - **Plain-language names:** every input on screen is shown by what it means (e.g. "Share of all earlier logins
   from this country"); the login id, in *Login details*, is shown for reference only and is not a model input.
 
@@ -50,8 +66,8 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 than what is new for the account. Turning *rare network* off brings the first-login takeover from 0.74 to 0.02 and
 the returning-account one from 0.59 to 0.03 (review / block to step-up); turning *most attempts from attack IPs*
 off brings the returning-account one to allow; turning off all five *where from* switches makes either look
-ordinary (allow). The device type matters too (the returning-account takeover from desktop to mobile: 0.59 to
-0.13). The account-novelty switches move scores less: on the ordinary returning-account scenario no combination
+ordinary (allow). The device type matters too: the returning-account takeover on a mobile instead of a desktop
+(with a browser that fits it) drops from 0.59 to 0.02. The account-novelty switches move scores less: on the ordinary returning-account scenario no combination
 of them changes the response. Novelty is common in legitimate traffic too: 43% of legitimate returning-account
 logins in development bring a new country, network, device type, operating system or browser for the account
 (41% a new IP address), against 86% of the 71 returning-account takeover logins.
@@ -65,9 +81,10 @@ The model receives the data and produces predictions correctly: `tests/inference
 loading, explanations and value formatting, and runs the whole app with Streamlit's test runner on a toy data
 directory (`tests/inference/test_app.py`): switches reach the model and the changed inputs are listed first,
 implied signals follow their cause and return to their real value when it is switched off, the travel switch
-follows the time since the previous login, the device type reaches the model, a first login greys out the history
+follows the time since the previous login and gets back the viewer's value when the rule no longer applies, the
+device type reaches the model, a first login greys out the history
 signals, and "back to the real login" restores the original score. On the real data, every scenario was also
-driven through 40 random control changes: no rule was broken and every reset restored the original score.
+driven through 60 random control changes: no rule was broken and every reset restored the original score.
 
 ## Evidence
 
