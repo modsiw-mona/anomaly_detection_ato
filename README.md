@@ -8,13 +8,7 @@
 
 Repository for master's thesis project on **Account Take Over (ATO) detection** in authentication records using anomaly detection methodologies.
 
-Scaffolded from [JoseRZapata/data-science-project-template](https://github.com/JoseRZapata/data-science-project-template) via [cruft](https://cruft.github.io/cruft/), following the [Ciencia de Datos en Producción](https://joserzapata.github.io/courses/ciencia-datos-en-produccion/) methodology.
-
-Using the data science project template <https://github.com/JoseRZapata/data-science-project-template>
-
 ## Features and Tools
-
-Information about all the features and tools used in this project: <https://joserzapata.github.io/data-science-project-template/#features-and-tools>
 
 Features                                     | Package  | Why?
  ---                                         | ---      | ---
@@ -189,7 +183,7 @@ This project was generated from [@JoseRZapata]'s [data science project template]
 [coverage.py]: https://coverage.readthedocs.io/
 [Cruft]: https://cruft.github.io/cruft/
 [data science project template]: https://github.com/JoseRZapata/data-science-project-template
-[Data structure]: https://github.com/JoseRZapata/data-science-project-template/blob/main/anomaly_detection_ato/data/README.md
+[Data structure]: https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/data/README.md
 [Mypy]: http://mypy-lang.org/
 [Notebook template]: https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/notebook_template.ipynb
 [pre-commit]: https://pre-commit.com/
