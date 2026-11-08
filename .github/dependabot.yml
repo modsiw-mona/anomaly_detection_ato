@@ -18,6 +18,8 @@ updates:
           - "*"
     commit-message:
       prefix: "chore(deps)"
+    labels:
+      - "automerge"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -27,3 +29,5 @@ updates:
       timezone: "UTC"
     commit-message:
       prefix: "ci(deps)"
+    labels:
+      - "automerge"

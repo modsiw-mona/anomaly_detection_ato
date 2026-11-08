@@ -32,3 +32,6 @@
   description: "Requested major feature or change of behavior"
 - name: "wontfix"
   color: "ffffff"
+- name: "automerge"
+  color: "328cc1"
+  description: "Automatically merge PRs that meet the criteria"
