@@ -110,7 +110,7 @@ def test_where_from_switch_reaches_the_model(
     moved = bool(app.metric[0].delta)
     unmoved = any("do not move the score" in c.value for c in app.caption)
     assert moved or unmoved, "the switch changes the login's network inputs"
-    why = app.table[-1].value  # the right column (Why) is drawn after the login details
+    why = app.table[0].value  # Why, then the comparison table
     network_inputs = {
         "Share of all earlier logins from this network (ASN)",
         "Share of all earlier logins from this IP",
@@ -149,7 +149,7 @@ def test_changed_signal_is_listed_first(data_dir: Path, monkeypatch: pytest.Monk
     travel.set_value(not travel.value).run()
     assert not app.exception, app.exception
     top = set(
-        app.table[-1].value["input"].head(2)
+        app.table[0].value["input"].head(2)
     )  # the two changed inputs: travel and the time gap
     assert top == {
         "Country changed within an hour of the previous login",
@@ -214,9 +214,9 @@ def test_device_type_reaches_the_model(data_dir: Path, monkeypatch: pytest.Monke
     client_inputs = (
         "Device type", "Share of all earlier logins with this", "Accounts seen with this exact user agent",
     )  # fmt: skip
-    assert app.table[-1].value.iloc[0]["input"].startswith(client_inputs)
-    detail = app.table[0].value  # the login in detail: real and with your changes
-    row = detail[detail["field"] == "Device type"].iloc[0]
+    assert app.table[0].value.iloc[0]["input"].startswith(client_inputs)
+    comparison = app.table[1].value
+    row = comparison[comparison["signal"] == "Device type"].iloc[0]
     assert (row["real login"], row["with your changes"]) == (real, other)
 
 
@@ -229,15 +229,37 @@ def test_first_login_greys_out_history_signals(
     assert not app.select_slider, "no previous login, so no time since it"
 
 
-def test_every_control_has_a_definition(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_technical_terms_are_explained(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
-    controls = [
-        *app.toggle,
-        app.radio(key="signal-device_type"),
-        app.select_slider(key="signal-gap"),
-    ]
-    assert all(c.help for c in controls), [c.label for c in controls if not c.help]
+    for key in ("rare_network", "attack_network", "attack_ip", "new_asn", "new_user_agent"):
+        assert app.toggle(key=f"signal-{key}").help, key
+    assert "ASN (autonomous system number)" in app.toggle(key="signal-rare_network").help
+    assert not app.toggle(key="signal-quiet_network").help, "a plain switch needs no definition"
+    assert not any((t.help or "").startswith("On") for t in app.toggle), (
+        "the name already says when"
+    )
+
+
+def test_comparison_shows_only_the_signals_and_the_score(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    comparison = app.table[1].value
+    assert list(comparison.columns) == ["signal", "real login", "with your changes"]
+    assert comparison.iloc[-1]["signal"] == "Takeover score"
+    assert not comparison["signal"].str.contains("id|Time").any(), "no login id or time"
+    assert (comparison["real login"] == comparison["with your changes"]).all(), (
+        "nothing changed yet"
+    )
+    attack = app.toggle(key="signal-attack_ip")
+    attack.set_value(not attack.value).run()
+    comparison = app.table[1].value
+    row = comparison[comparison["signal"] == "IP address on an attack list"].iloc[0]
+    assert row["real login"] != row["with your changes"]
+    last = comparison.iloc[-1]
+    assert last["with your changes"].split()[0] == app.metric[0].value
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
