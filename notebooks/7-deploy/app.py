@@ -56,10 +56,7 @@ THESIS_EN = (
     "Account takeover (ATO) detection through automatic identification of behavioural anomalies in "
     "authentication records"
 )
-THESIS_ES = (
-    "Detección de Account Takeover (ATO) mediante identificación automática de anomalías comportamentales "
-    "en registros de autenticación"
-)
+REPOSITORY = "https://github.com/modsiw-mona/anomaly_detection_ato"
 TIER_STYLE = {"review / block": "error", "step-up": "warning", ALLOW: "success"}
 RESPONSE = {"review / block": "block", "step-up": "ask for 2FA (a second factor)", ALLOW: "allow"}
 SHORT = {"review / block": "block", "step-up": "ask for 2FA", ALLOW: "allow"}  # in the table
@@ -327,18 +324,21 @@ def _real(login: pl.DataFrame, column: str) -> bool:
 
 def introduction() -> None:
     st.markdown(
-        f"This demo accompanies the master's thesis *{THESIS_EN}* (*{THESIS_ES}*). A machine-learning "
-        "model gives each successful login a **takeover score** and a **response**: allow it, ask for a "
-        "second factor (2FA), or block it. The logins are real records of a public synthetic dataset (RBA "
-        "dataset, Wiefling et al. 2022), from users the model never saw in training."
+        f"This demo accompanies the master's thesis *{THESIS_EN}* ([code and results]({REPOSITORY})). "
+        "A machine-learning model gives each successful login a **takeover score** and a **response**: "
+        "allow it, ask for a second factor (2FA), or block it. The logins are real records of a public "
+        "synthetic dataset (RBA dataset, Wiefling et al. 2022), from users the model never saw in training."
     )
     st.markdown(
         "**How to use it**\n"
-        "1. **Choose one of the kinds of authentication records** below. Each one is a real login.\n"
+        "1. **Choose one of the kinds of authentication records** below.\n"
         "2. **Choose a scenario:** an account that had logged in before, or an account's first login.\n"
-        "3. **Change the login's inputs** on the left. The model re-scores the login with exactly those "
-        "values; the right side shows the new score, the response and how the score is built. "
-        "**Back to the real login** undoes your changes."
+        "3. **See an example:** the left side fills with the inputs of a real login of that kind, and the "
+        "right side shows the model's score and response for it.\n"
+        "4. **Play with the model:** change the login's inputs on the left and watch the score and the "
+        "recommended response change. **Back to the real login** undoes your changes.\n"
+        "5. **Compare in the table** *How the score is built*: each input's real value next to yours, and "
+        "how much it raises (+) or lowers (-) the score. The last row compares the two scores."
     )
 
 
