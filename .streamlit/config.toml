@@ -1,0 +1,14 @@
+# Demo runs locally only, with no usage statistics sent anywhere.
+[browser]
+gatherUsageStats = false
+
+[server]
+address = "127.0.0.1"
+headless = true
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#6B3FA0"  # purple accent (buttons, sliders, switches)

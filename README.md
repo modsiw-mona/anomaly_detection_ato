@@ -63,6 +63,36 @@ Template for notebooks                       | [Notebook template] |
     make install_data_libs
     ```
 
+## 🔐 Demo — account-takeover risk (issue #8)
+
+A local [Streamlit](https://streamlit.io/) app scores a login with the selected model and shows the response tier
+(allow, ask for 2FA, block) and the inputs behind the score. It runs only on your machine
+(`127.0.0.1`), with Streamlit's usage statistics turned off (`.streamlit/config.toml`).
+
+1. After [setting up the environment](#set-up-the-environment) (including `brew install libomp` on macOS), build
+   the data and the model once (each step is idempotent; the notebooks take ~70 and ~2 minutes):
+
+    ```bash
+    make data intermediate features split
+    make notebooks_run NB=notebooks/5-models/06-sap-model_selection-2026_11_03.ipynb
+    make notebooks_run NB=notebooks/6-interpretation/07-sap-model_interpretation-2026_11_04.ipynb
+    ```
+
+1. Start the demo and open <http://127.0.0.1:8501>:
+
+    ```bash
+    make demo
+    ```
+
+Read the short introduction at the top, click a kind of outcome (a takeover blocked, one asked for 2FA, a false
+alarm, an ordinary login) and a scenario (a returning account or an account's first login). Each scenario is a
+real test login. Every control is one input of the model, set to that login's value, with where takeovers and
+legitimate logins usually are: move any of them to see the score, the response and how the score is built
+change. `?example=<block|2fa|false-alarm|ordinary>&scenario=<returning|first>` in the URL opens a
+given scenario. Screenshots and details: [`notebooks/7-deploy/`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/7-deploy/README.md).
+
+![Demo: a takeover blocked](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/01-takeover-block.png)
+
 ## Install dependencies
 
 After init the environment to install a new package, run:
