@@ -21,6 +21,8 @@ import json
 import os
 import re
 import tempfile
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
@@ -51,6 +53,8 @@ NUMBER_INPUTS = (  # the demo's sliders, in their order on the page
 DOWNLOAD_TIMEOUT = 60  # seconds per file
 ALLOWED_SCHEMES = ("https", "file")  # file: for tests and local copies
 MAX_FILE_BYTES = 64 * 1024 * 1024  # the model is ~10 MB; anything far larger is not ours
+RETRY_WAITS = (2.0, 5.0, 15.0)  # seconds before each new attempt, for temporary failures only
+TRANSIENT_HTTP = frozenset({429, 500, 502, 503, 504})
 SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # file and release names: no paths, no hosts
 
 
@@ -256,12 +260,32 @@ def _safe(name: object) -> str:
     return text
 
 
+def _transient(error: Exception) -> bool:
+    """A failure worth retrying: a server error, rate limiting, a timeout or a dropped connection."""
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in TRANSIENT_HTTP
+    return isinstance(error, urllib.error.URLError | TimeoutError | ConnectionError)
+
+
+def _read(url: str) -> bytes:
+    """The body of ``url``, retrying temporary failures with growing waits (``RETRY_WAITS``)."""
+    for wait in (*RETRY_WAITS, None):
+        try:
+            with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:  # noqa: S310 — scheme checked
+                data: bytes = response.read(MAX_FILE_BYTES + 1)
+                return data
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if wait is None or not _transient(error):
+                raise
+            time.sleep(wait)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def _download(url: str, target: Path) -> None:
     """Write ``url`` to ``target``, a new file (never follows or reuses an existing one)."""
     if urllib.parse.urlparse(url).scheme not in ALLOWED_SCHEMES:
         raise ValueError(f"refusing to download from {url}")
-    with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:  # noqa: S310 — scheme checked
-        data = response.read(MAX_FILE_BYTES + 1)
+    data = _read(url)
     if len(data) > MAX_FILE_BYTES:
         raise ValueError(f"{url}: larger than {MAX_FILE_BYTES} bytes; not ours")
     target.unlink(missing_ok=True)  # a stale partial file (unlink never follows a link)

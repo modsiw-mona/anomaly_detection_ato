@@ -676,20 +676,20 @@ def main() -> None:
     )
     st.title("Account-takeover risk demo")
     try:
-        det = explained_detector()
-        counts, picks = scenarios()
+        with st.spinner(
+            "Loading the model and the example logins (a first visit downloads about 10 MB)..."
+        ):
+            det = explained_detector()
+            counts, picks = scenarios()
     except FileNotFoundError as missing:
         st.error(
             f"Model or data not found ({missing.filename}). Run the pipeline and notebooks 06 and 07 "
             "first; see README."
         )
         st.stop()
-    except (
-        OSError,
-        ValueError,
-    ) as failure:  # the published bundle could not be downloaded or verified
+    except (OSError, ValueError) as failure:  # the published bundle: not downloaded or not verified
         st.error(
-            f"The demo's data could not be loaded ({type(failure).__name__}). Please try again later."
+            f"The demo's data could not be loaded ({failure}). Please reload in a few minutes."
         )
         st.stop()
     if not picks:
