@@ -4,8 +4,7 @@
 
 A small web app ([Streamlit](https://streamlit.io/)) presented as a simulated sign-in: a real login attempt on
 the left, a sign-in card on the right. Pressing **Log in** shows the response in proportion to the risk, as the
-person would see it (let in, asked for a code, or held until they verify their identity), and below it what the
-system saw: the takeover score, how often such scores were takeovers, the thresholds and how the score is built.
+person would see it (let in, asked to confirm it is them, or blocked), and below it what the model saw: the takeover score, how often such scores were takeovers, the thresholds and how the score is built.
 
 ## How to use it
 
@@ -17,7 +16,7 @@ system saw: the takeover score, how often such scores were takeovers, the thresh
    network is always a new IP address, for example).
 3. **Press Log in.** The credentials are valid in every scenario, since a takeover uses the real password; only
    where and how the login happens can tell the owner from an attacker.
-4. **Change the attempt** and log in again to see how the response changes. **Back to the real login** undoes the
+4. **Change the attempt** and log in again to see how the response changes. **Reset to the real login** undoes the
    changes.
 5. **Compare in the table:** each input's real value next to yours, and how much it raises or lowers the score (tree
    SHAP contributions, which, added to a typical ordinary login's score, give this login's score).
@@ -26,14 +25,14 @@ New to it? **Take the guided tour**: it dims the page and walks through each par
 
 ## Screenshots
 
-![A takeover: sign-in held](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/01-takeover-block.png)
+![A takeover: sign-in blocked](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/01-takeover-block.png)
 
-**A takeover, sign-in held.** A returning account logs in from a network seen by only 7 accounts before, with a 70%
+**A takeover, sign-in blocked.** A returning account logs in from a network seen by only 7 accounts before, with a 70%
 attack-IP history, from a rare country and browser: score 0.5866, above the block threshold.
 
 ![A takeover asked for a second factor](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/02-takeover-2fa.png)
 
-**A takeover asked for a second factor.** The code goes to the account's phone, which the attacker does not have.
+**A takeover asked for a second factor.** The sign-in is on hold until the person confirms it is them; the code goes to the account's phone, which the attacker does not have.
 
 ![An ordinary login allowed](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/03-ordinary-allow.png)
 

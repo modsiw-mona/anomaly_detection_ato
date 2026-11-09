@@ -39,7 +39,7 @@ def _scenario_keys(app: AppTest) -> list[str]:
 
 
 def _log_in(app: AppTest) -> AppTest:
-    """Press Log in: the response and what the system saw appear for the current attempt."""
+    """Press Log in: the response and what the model saw appear for the current attempt."""
     app.button(key="login").click().run()
     assert not app.exception, app.exception
     return app
@@ -206,7 +206,7 @@ def test_technical_terms_are_explained(data_dir: Path, monkeypatch: pytest.Monke
 def test_the_score_is_put_in_context(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = _log_in(_open(data_dir, monkeypatch))
     assert any(m.value.startswith("In the dataset,") for m in app.markdown)
-    assert any("threshold" in e.value for e in [*app.error, *app.warning, *app.success]), (
+    assert any("threshold" in m.value for m in app.markdown if "Response:" in m.value), (
         "where it falls"
     )
 
@@ -220,12 +220,12 @@ def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert app.error, "a clear message instead of a crash"
 
 
-SCREENS = {"block": "Sign-in on hold", "2fa": "Confirm it's you", "allow": "Welcome back"}
+SCREENS = {"block": "Sign-in blocked.", "2fa": "Sign-in on hold.", "allow": "Welcome back."}
 
 
 def _screen(app: AppTest) -> str:
-    """Which response screen the page shows (the person's view, above what the system saw)."""
-    shown = " ".join(e.value for e in [*app.error, *app.warning, *app.success])
+    """Which response screen the page shows (the person's view, above what the model saw)."""
+    shown = " ".join(m.value for m in app.markdown if "border-left" in m.value)
     found = [tier for tier, text in SCREENS.items() if text in shown]
     assert len(found) == 1, shown
     return found[0]
@@ -234,7 +234,7 @@ def _screen(app: AppTest) -> str:
 def test_log_in_shows_the_screen_of_each_tier(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The response the person sees always matches the tier of the score the system saw."""
+    """The response the person sees always matches the tier of the score the model saw."""
     app = _open(data_dir, monkeypatch)
     seen = set()
     for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
@@ -296,14 +296,35 @@ def test_the_2fa_screen_takes_a_code_as_a_simulation(
     code = next(f for f in app.text_input if f.label == "Verification code")
     assert not code.value, "a new attempt starts with an empty code"
     code.input("123456").run()
+    app.button(key="verify").click().run()
     assert not app.exception, app.exception
-    assert any("attacker who only has the password cannot" in c.value for c in app.caption)
-    assert any("Any code works in this demo" in c.value for c in app.caption)
+    boxes = " ".join(m.value for m in app.markdown if "border-left" in m.value)
+    assert "Identity verified." in boxes, "the owner, who has the phone, gets in"
+    attacker = next(t for t in app.toggle if t.label.startswith("Simulate an attacker"))
+    attacker.set_value(True).run()
+    boxes = " ".join(m.value for m in app.markdown if "border-left" in m.value)
+    assert "Verification failed." in boxes, "an attacker without the phone is blocked"
+    assert "Identity verified." not in boxes
     assert any(c.value.startswith("Simulation:") for c in app.caption)
 
 
+def test_the_card_reacts_to_the_response(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A refused login shakes the card and colours it red or orange; a login that goes through, green."""
+    app = _open(data_dir, monkeypatch)
+    seen = set()
+    for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
+        app.button(key=key).click().run()
+        tier = _screen(_log_in(app))
+        style = " ".join(m.value for m in app.markdown if "st-key-tour-card" in m.value)
+        colour = {"block": "#b42318", "2fa": "#b54708", "allow": "#1e7a34"}[tier]
+        assert f"outline: 3px solid {colour}" in style, tier
+        assert ("@keyframes refused-" in style) == (tier != "allow"), "only a refused login shakes"
+        seen.add(tier)
+    assert len(seen) >= 2  # noqa: PLR2004
+
+
 def _highlighted(app: AppTest) -> str:
-    styles = " ".join(m.value for m in app.markdown if "<style>" in m.value)
+    styles = " ".join(m.value for m in app.markdown if "200vmax" in m.value)  # the tour's spotlight
     parts = ("kinds", "attempt", "card", "response", "system")
     return next(k for k in parts if f"st-key-tour-{k} " in styles)
 
