@@ -1,0 +1,15 @@
+{
+  "release": "demo-bundle-v1",
+  "base_url": "https://github.com/modsiw-mona/anomaly_detection_ato/releases/download/demo-bundle-v1/",
+  "saved_with": {
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.4"
+  },
+  "files": {
+    "rba_model.joblib": "26625b4626b200cb2277e49440b545906899e82148fb1ef9b9fe2ed3a4e32c12",
+    "rba_model.json": "bfa362a9d0997cde053d2b6a1a64d8d2085bf408d0eef1600ddc18355523305b",
+    "reference.parquet": "f13918d9269b269d375811d1d8aa1c7082f95433836cf9d5f2f234ada183ea36",
+    "scenarios.parquet": "71afb50fb9bd40131c2d558740360dfe9c63320b30ef9560223ba38ebe110c9d",
+    "summary.json": "8d57ad291c22a5b436f81760f8f18cbb0f2c9809a49b6cd18ce21b910afe6d51"
+  }
+}

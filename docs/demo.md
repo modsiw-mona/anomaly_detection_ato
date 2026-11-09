@@ -31,7 +31,10 @@ and the last row turns green as the score falls from 0.0300 to 0.0100 (still ask
 
 ## Run it
 
-The demo runs on your machine after building the data and the model (see [Reproduce](reproduce.md)):
+The public version runs on Streamlit Community Cloud from a small published bundle (the eight example logins,
+the reference sample, the summaries and the model, each checked against its SHA-256 before it is loaded).
+
+On your machine, after building the data and the model (see [Reproduce](reproduce.md)):
 
 ```bash
 make demo

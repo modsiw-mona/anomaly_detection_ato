@@ -18,8 +18,7 @@ right shows how the score is built: tree-SHAP contributions per control, in the 
 from a typical ordinary login's score to this one's.
 """
 
-import copy
-import itertools
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -35,8 +34,7 @@ REPO_ROOT = next(
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from data.datasets import load_dataset_config  # noqa: E402
-from data.split import load_side  # noqa: E402
+from inference.bundle import DemoBundle, build_bundle, fetch  # noqa: E402
 from inference.predict import ALLOW, NEVER_SEEN_PREFIX, Detector  # noqa: E402
 from inference.what_if import (  # noqa: E402
     GAPS,
@@ -45,7 +43,6 @@ from inference.what_if import (  # noqa: E402
     SIGNALS,
     gap_of,
     required_signals,
-    typical_row,
     unknown,
     with_attack_share,
 )
@@ -158,7 +155,6 @@ DEFINITIONS = {  # hover text, only where a name uses a technical term
 KEY_NOVELTY = ("new_country", "new_asn", "new_device_type", "new_os", "new_browser")
 OTHER = "Other inputs (kept as in the real login)"
 START = "Typical ordinary login (starting point)"
-REFERENCE_SIZE = 300  # ordinary logins that define "typical" for the explanations
 MIN_SCORE_CHANGE = 5e-5  # below this the 4-decimal score does not move
 MIN_EFFECT = 1e-4  # contributions smaller than this read as no effect
 SMALL_SHARE, LARGE_SHARE = 0.01, 0.1  # percentage formats: two significant digits below 1%
@@ -167,122 +163,63 @@ SMALL_SHARE, LARGE_SHARE = 0.01, 0.1  # percentage formats: two significant digi
 # ---------- data and model ---------------------------------------------------------------------------
 
 
-@st.cache_resource
-def detector() -> Detector:
-    return Detector.load(DATA_DIR, DATASET)
+BUNDLE_RECORD = Path(__file__).with_name("bundle.json")  # the published demo bundle and its SHA-256
 
 
-@st.cache_data
-def test_logins() -> pl.DataFrame:
-    """Test-side logins with their saved scores (issue #7)."""
-    config = load_dataset_config(DATASET)
-    scores = pl.read_parquet(DATA_DIR / "07_model_output" / f"{DATASET}_test_scores.parquet")
-    return load_side(config, DATA_DIR, "test").collect().join(scores, on="event_id", how="inner")
-
-
-@st.cache_data
-def dev_logins() -> pl.DataFrame:
-    """Development-side logins: the number inputs, the label and the out-of-fold score (issue #6)."""
-    config = load_dataset_config(DATASET)
-    scores = pl.read_parquet(DATA_DIR / "07_model_output" / f"{DATASET}_dev_oof.parquet")
-    dev = load_side(config, DATA_DIR, "dev").select("event_id", "label_ato", *SLIDERS).collect()
-    return dev.join(scores, on="event_id", how="inner")
+def _published_bundle() -> Path:
+    """Download the published bundle (checked file by file against ``bundle.json``). ``make demo`` sets
+    ``ATO_DEMO_OFFLINE``, so a local run never downloads anything."""
+    if os.environ.get("ATO_DEMO_OFFLINE") or not BUNDLE_RECORD.exists():
+        raise FileNotFoundError(2, "no data and no published bundle", str(DATA_DIR))
+    record = json.loads(BUNDLE_RECORD.read_text())
+    if not {f"{DATASET}_model.joblib", f"{DATASET}_model.json"} <= set(record["files"]):
+        raise ValueError(f"the published bundle has no model for dataset {DATASET!r}")
+    return fetch(record)
 
 
 @st.cache_resource
+def demo() -> tuple[Detector, DemoBundle]:
+    """The model and the demo bundle: built from the full data when it is here (``ATO_DATA_DIR``), else read
+    from ``ATO_BUNDLE_DIR``, else the published bundle. Explanations are relative to the bundle's reference."""
+    if (DATA_DIR / "07_model_output" / f"{DATASET}_dev_oof.parquet").exists():
+        det = Detector.load(DATA_DIR, DATASET)
+        bundle = build_bundle(DATA_DIR, DATASET, list(SLIDERS), DEVICES, det)
+    else:
+        folder = Path(os.environ.get("ATO_BUNDLE_DIR") or _published_bundle())
+        bundle = DemoBundle.read(folder)
+        det = Detector.from_files(folder, DATASET, bundle.thresholds)
+    det.set_reference(bundle.reference)
+    return det, bundle
+
+
 def explained_detector() -> Detector:
-    """The detector, explaining relative to a fixed sample of ordinary (allowed, legitimate) test logins."""
-    det = copy.copy(detector())  # keep the shared cached detector unchanged
-    logins = test_logins()
-    ordinary = logins.filter(~pl.col("label_ato") & (pl.col("score") < det.thresholds["step-up"]))
-    det.set_reference(ordinary.sample(n=min(REFERENCE_SIZE, ordinary.height), seed=0))
-    return det
+    return demo()[0]
 
 
-def _median(frame: pl.DataFrame, column: str) -> float | None:
-    value = frame[column].median()
-    return float(value) if isinstance(value, int | float) else None
-
-
-@st.cache_data
 def usual_values() -> dict[str, tuple[float | None, float | None]]:
     """Median of each number input among development takeovers and legitimate logins."""
-    dev = dev_logins()
-    ato, legit = dev.filter(pl.col("label_ato")), dev.filter(~pl.col("label_ato"))
-    return {c: (_median(ato, c), _median(legit, c)) for c in SLIDERS}
+    return demo()[1].usual
 
 
-@st.cache_data
 def device_shares() -> dict[str, float]:
     """The typical share of all earlier logins of each device type (moves with the device type)."""
-    logins = test_logins()
-    shares = {}
-    for device in DEVICES:
-        value = _median(logins.filter(pl.col(DEVICE) == device), "global_share_device_type")
-        if value is not None:
-            shares[device] = value
-    return shares
+    return demo()[1].device_shares
 
 
-@st.cache_data
 def score_bins() -> list[tuple[float, float, int, int]]:
     """Development logins by score range: (low, high, logins, takeovers), the tiers split further."""
-    det, dev = detector(), dev_logins()
-    edges = [0.0, det.thresholds["step-up"], det.thresholds["review / block"], 0.2, 0.5, 1.000001]
-    bins = []
-    for low, high in itertools.pairwise(edges):
-        part = dev.filter((pl.col("score") >= low) & (pl.col("score") < high))
-        bins.append((low, high, part.height, int(part["label_ato"].sum())))
-    return bins
+    return demo()[1].score_bins
 
 
-@st.cache_data
 def typical_gap_hours() -> dict[str, float | None]:
     """Hours since the previous login of a typical test login in each time range."""
-    logins, hours, lower, out = test_logins(), pl.col("hours_since_prev_success"), 0.0, {}
-    for name, upper in GAPS.items():
-        within = logins.filter((hours >= lower) & (hours < upper))
-        out[name] = typical_row(
-            within, "hours_since_prev_success", ["hours_since_prev_success"]
-        ).get("hours_since_prev_success")
-        lower = upper
-    return out
+    return demo()[1].gap_hours
 
 
-def kinds(logins: pl.DataFrame, det: Detector) -> dict[str, pl.DataFrame]:
-    """Test-side logins grouped by ground truth and response tier, keyed by slug (empty ones left out)."""
-    score, takeover = pl.col("score"), pl.col("label_ato")
-    block, step_up = det.thresholds["review / block"], det.thresholds["step-up"]
-    groups = {
-        "block": logins.filter(takeover & (score >= block)),
-        "2fa": logins.filter(takeover & (score >= step_up) & (score < block)),
-        "missed": logins.filter(takeover & (score < step_up)),
-        "false-alarm": logins.filter(~takeover & (score >= step_up)),
-        "ordinary": logins.filter(~takeover & (score < step_up)),
-    }
-    return {slug: frame for slug, frame in groups.items() if not frame.is_empty()}
-
-
-def representative(pool: pl.DataFrame) -> dict[str, pl.DataFrame]:
-    """The median-score returning-account login and first login of a group (ties: fixed order)."""
-    first = pl.col("prior_successes") == 0
-    picks = {}
-    for name, frame in (("returning", pool.filter(~first)), ("first", pool.filter(first))):
-        if frame.is_empty():
-            continue
-        ordered = frame.sort(pl.col("score"), pl.col("event_id").hash(seed=0))
-        picks[name] = ordered[(ordered.height - 1) // 2]
-    return picks
-
-
-@st.cache_data
 def scenarios() -> tuple[dict[str, int], dict[str, dict[str, pl.DataFrame]]]:
     """Group sizes and the scenario logins of each kind."""
-    groups = kinds(test_logins(), explained_detector())
-    return (
-        {slug: frame.height for slug, frame in groups.items()},
-        {slug: representative(frame) for slug, frame in groups.items()},
-    )
+    bundle = demo()[1]
+    return bundle.counts, bundle.picks()
 
 
 # ---------- formatting -------------------------------------------------------------------------------
@@ -745,6 +682,14 @@ def main() -> None:
         st.error(
             f"Model or data not found ({missing.filename}). Run the pipeline and notebooks 06 and 07 "
             "first; see README."
+        )
+        st.stop()
+    except (
+        OSError,
+        ValueError,
+    ) as failure:  # the published bundle could not be downloaded or verified
+        st.error(
+            f"The demo's data could not be loaded ({type(failure).__name__}). Please try again later."
         )
         st.stop()
     if not picks:

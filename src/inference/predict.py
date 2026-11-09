@@ -54,16 +54,24 @@ class Detector:
     @classmethod
     def load(cls, data_dir: Path, dataset: str = "rba") -> Detector:
         """Load the model of ``dataset`` from ``data_dir/06_models`` and its thresholds."""
-        models = data_dir / "06_models"
-        metadata = json.loads((models / f"{dataset}_model.json").read_text())
         dev_scores = pl.read_parquet(data_dir / "07_model_output" / f"{dataset}_dev_oof.parquet")
         reference = np.sort(dev_scores["score"].to_numpy())
+        detector = cls.from_files(data_dir / "06_models", dataset, alert_thresholds(reference))
+        detector.reference_scores = reference
+        return detector
+
+    @classmethod
+    def from_files(cls, folder: Path, dataset: str, thresholds: Mapping[str, float]) -> Detector:
+        """The model saved in ``folder`` with thresholds computed elsewhere (e.g. a demo bundle).
+
+        The ``.joblib`` file is a pickle: load only files you produced or whose SHA-256 you checked.
+        """
+        metadata = json.loads((folder / f"{dataset}_model.json").read_text())
         return cls(
-            pipeline=joblib.load(models / f"{dataset}_model.joblib"),
+            pipeline=joblib.load(folder / f"{dataset}_model.joblib"),
             columns=list(metadata["columns"]),
-            thresholds=alert_thresholds(reference),
+            thresholds=dict(thresholds),
             metadata=metadata,
-            reference_scores=reference,
         )
 
     def riskier_than(self, score: float) -> float:
