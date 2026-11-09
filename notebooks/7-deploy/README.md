@@ -6,27 +6,33 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 ## What it does
 
 - **The page explains itself.** It opens with what the demo is (the thesis title, with a link to this
-  repository), what the model answers (a takeover score and a response) and five steps on how to use it.
-- **Choose a real login, not a row number.** Buttons at the top pick a kind of outcome, each with one line on
-  what it means: takeover blocked, takeover asked for 2FA, legitimate login flagged (false alarm), ordinary
-  legitimate login. Each kind offers two scenarios, a **returning account** and an account's **first login**;
-  each is a real login from the **test side** of the split (users the model never saw), the median-score login
-  of its scenario.
+  repository) and what the model gives each login (a takeover score and a proportional response), in two
+  sentences (with a one-line disclaimer that the sign-in is only simulated), then three short steps; *Take the
+  guided tour* sits next to them. The page is numbered: 1. pick an example, 2. the login attempt, 3. log in.
+- **Choose a real login, not a row number.** A row of buttons picks the kind of record, each label saying what
+  it is and what the model did ("Takeover: the model blocks it", "Real user: the model asks for 2FA by mistake",
+  and so on), each in the colour of the outcome: red block, orange 2FA, yellow false alarm, green let in. A second
+  row of buttons the same size picks the account: one that had logged in before, or an
+  account's first login. Each is a real login from the **test side** of the split (users the model never saw),
+  the median-score login of its scenario. A card then shows **the selected login** at a glance: its name, what
+  really happened (a takeover or the real user, as a red or green label), the account's earlier logins, where
+  from and when.
 - **Every control is one model input**, set to the real login's value. The model re-scores exactly the inputs
   shown; nothing is copied from another login (Google's What-If Tool works the same way: edit a data point's
   values and run the model again).
     - *Number inputs are sliders over plain steps*, the real value included: how common the network is (share of
       all earlier logins from it), different accounts that had logged in from it, login attempts from it in the
       24 hours before, the share of its earlier attempts that came from attack IPs, how common the country is,
-      how common the browser version is. Under each slider, **where takeovers and legitimate logins usually are**
-      (medians of the development side), so a viewer knows what a value means without knowing the data.
+      how common the browser version is. Each slider's "?" says what it measures and **where takeovers and
+      legitimate logins usually are** (medians of the development side), so a viewer knows what a value means
+      without knowing the data, and the page stays short.
     - *Yes/no inputs are switches*: an attack-listed IP, and, compared with the account's earlier logins, new
       country, region, city, network, IP address, device type, operating system, browser, exact user agent, and a
       country change within an hour. Also the device type and the time since the previous login.
     - On an account's **first** login there is no earlier login to compare with, so the history inputs are
       greyed out.
 - **Only combinations the data has.** A control that follows from others is greyed out with the reason on
-  hover, and gets back the viewer's value once the rule no longer applies; "Back to the real login" resets
+  hover, and gets back the viewer's value once the rule no longer applies; "Reset to the real login" resets
   everything. Each rule holds without exception in the RBA feature table, and
   `tests/inference/test_what_if.py` checks them there:
     - a network nobody had logged in from (0%) had no accounts, and one seen before had at least one account and
@@ -41,9 +47,27 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
       country change is a new country;
     - every earlier attempt from an attack-listed IP is an attack attempt (and none from another IP); a network
       with no attack attempts has no attack-listed IP, and one with only attack attempts has only such IPs.
-- **The model's answer:** the takeover score, **what a score this high meant in the dataset** (for example "50 of
+- **A simulated sign-in (issue #30).** The left side is *the login attempt*: where and how the person logs in.
+  The right side is a generic sign-in card ("Example SSO") with the username and password filled in: in a
+  takeover always uses the account's valid credentials. The score stays hidden until **Log in**. Then the card
+  reacts like a real sign-in: a refused login shakes it and turns it red (blocked) or orange (2FA); one that goes
+  through turns it green. Below, the message the person would see, as a real service shows it: *Welcome back*;
+  *Sign-in on hold*, asking to confirm with Face ID or a code, with the whole flow (enter any 6 digits and
+  Verify: *Identity verified*; switch on "Simulate an attacker", who does not have the phone: *Verification
+  failed*, the sign-in is blocked); or *Sign-in blocked*, the security team reviewing it. The introduction says
+  the sign-in is only simulated. Below that, what the model saw. Changing any input asks to log in again, so
+  each response belongs to the attempt shown.
+- **Feedback at every step.** A hint under the card always says what to do next (press Log in; change the attempt
+  and log in again). A short notice confirms each login, another flags at once that the attempt changed, and the
+  button then reads *Log in again*. After each login the page scrolls to the response, or, when the attempt
+  differs from the real login, to the table that compares the two.
+- **Guided tour.** *Take the guided tour* dims the page and highlights one part at a time (the kinds of record,
+  the login attempt, the sign-in card, what the person sees, what the model saw), with Back, Next and Skip. It is
+  plain CSS (a highlighted container above a dimmed page); a tiny script only scrolls the part into view.
+- **What the model saw:** the takeover score, **what a score this high meant in the dataset** (for example "50 of
   the 103 development logins scoring 0.5 or more were takeovers", against about 1 in 70,000 overall), the
-  **response** (allow, ask for 2FA, block) and the thresholds: the riskiest 1% of development logins (score
+  **response** (allow, ask for 2FA, block until verified), where the score falls against the two thresholds, and
+  the thresholds themselves: the riskiest 1% of development logins (score
   0.0033) are asked for 2FA and the riskiest 0.1% (0.0333) are blocked. These alert budgets were fixed before
   any model was trained, and turned into scores in issue #7 before the test set was
   opened. The demo names the tiers of issue #7 in plain words: *block* for review / block and *ask for 2FA* for
@@ -82,7 +106,7 @@ loading, explanations and value formatting, and runs the whole app with Streamli
 directory (`tests/inference/test_app.py`): a slider sets exactly the input it names, a never-seen network has no
 accounts, the table keeps the controls' order, ends with the score and adds up to it, technical terms are
 explained, implied switches follow their cause, the travel switch follows the time since the previous login,
-the device type reaches the model, a first login greys out the history inputs, and "Back to the real login"
+the device type reaches the model, a first login greys out the history inputs, and "Reset to the real login"
 restores the original score. On the real data, every scenario was also driven through 60 random control changes:
 no rule was broken, the table always added up to the score, and every reset restored the original score.
 
@@ -118,10 +142,10 @@ explanations, the alert thresholds and the summaries the page shows (about 70 KB
 
 | | |
 | --- | --- |
-| ![Takeover blocked](screenshots/01-takeover-block.png) | **Takeover blocked (returning account).** The introduction (with a link to this repository) and the five steps at the top; three earlier logins; the network is rare (0.00012% of logins, 7 accounts), quiet in the previous 24 hours and has a 70% attack-IP history, from a rare country and browser. Under each slider, where takeovers and legitimate logins usually are; on the right, what a score of 0.59 meant in the dataset (50 of 103 logins were takeovers) and how the score is built. |
-| ![Takeover on a first login](screenshots/02-first-login.png) | **Takeover on a new account's first login.** There is no earlier login to compare with, so the account-history inputs are greyed out; the score comes from where the login comes from. |
-| ![Attack-listed IP switched off](screenshots/03-attack-ip-off.png) | **The takeover asked for 2FA, its attack-listed IP switched off.** Only that input changes; its row is in bold and the last row turns green: 0.0300 to 0.0100, still ask for 2FA. |
-| ![Legitimate login flagged](screenshots/04-false-alarm.png) | **False alarm (returning account).** A legitimate login asked for 2FA: the score comes from a combination of smaller contributions. |
+| ![Takeover blocked](screenshots/01-takeover-block.png) | **Takeover, sign-in blocked (returning account).** The attempt on the left: three earlier logins; a rare network (0.00012% of logins, 7 accounts), quiet in the previous 24 hours, with a 70% attack-IP history; a rare country and browser. After **Log in**, the card shakes and turns red and the person sees "Sign-in blocked"; the model saw a score of 0.5866, above the block threshold, where 50 of 103 development logins were takeovers, and the table shows how the score is built. |
+| ![Takeover asked for 2FA](screenshots/02-takeover-2fa.png) | **Takeover, asked for a second factor.** The card turns orange and the sign-in is on hold until the person confirms it is them with Face ID or a code sent to the account's phone, which the attacker does not have; the score, 0.0300, falls between the two thresholds. |
+| ![Ordinary login allowed](screenshots/03-ordinary-allow.png) | **Ordinary legitimate login, allowed.** "Welcome back": a common network, country and browser give a score of 0.0000, below the 2FA threshold; every contribution is small. |
+| ![Guided tour](screenshots/04-guided-tour.png) | **Guided tour, step 4 of 6.** The page is dimmed except the part the step explains (here, what the person sees), with Back, Next and Skip. |
 
-Screenshots taken from the running app with headless Chrome (temporary profile) on 2026-11-08. The demo binds to
-`127.0.0.1` with Streamlit's usage statistics off, both in `make demo` and in `.streamlit/config.toml`.
+Screenshots taken from the running app with headless Chrome (temporary profile) on 2026-11-09. `make demo`
+binds to `127.0.0.1` with Streamlit's usage statistics off.
