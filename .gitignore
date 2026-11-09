@@ -131,7 +131,7 @@ out/
 # Spyder
 .spyproject/
 
-# Secrets and credentials — never commit (see docs/development-plan.md, section 7)
+# Secrets and credentials — never commit
 .env*
 !.env.example
 *.pem
@@ -145,3 +145,7 @@ secrets*
 
 # MkDocs build output (docs are built in CI, never committed)
 site/
+
+# Local working notes and assistant instructions — never committed
+CLAUDE.md
+CLAUDE.local.md

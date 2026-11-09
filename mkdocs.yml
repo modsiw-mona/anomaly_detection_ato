@@ -19,7 +19,6 @@ theme:
 
 nav:
   - Introduction: 'index.md'
-  - Development plan: 'development-plan.md'
   - Datasets:
       - Requirements and how to add one: 'datasets/README.md'
       - RBA dataset card: 'datasets/rba.md'
