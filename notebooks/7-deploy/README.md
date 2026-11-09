@@ -7,8 +7,8 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 
 - **The page explains itself.** It opens with what the demo is (the thesis title, with a link to this
   repository) and what the model gives each login (a takeover score and a proportional response), in two
-  sentences, then three short steps; *Take the guided tour* sits next to them. The page is numbered: 1. pick a
-  login, 2. the login attempt, 3. log in.
+  sentences (with a one-line disclaimer that the sign-in is only simulated), then three short steps; *Take the
+  guided tour* sits next to them. The page is numbered: 1. pick an example, 2. the login attempt, 3. log in.
 - **Choose a real login, not a row number.** A row of buttons picks the kind of record, each label saying what
   it is and what the model did ("Takeover: the model blocks it", "Real user: the model asks for 2FA by mistake",
   and so on), each in the colour of the outcome: red block, orange 2FA, yellow false alarm, green let in. A second
@@ -54,9 +54,9 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
   through turns it green. Below, the message the person would see, as a real service shows it: *Welcome back*;
   *Sign-in on hold*, asking to confirm with Face ID or a code, with the whole flow (enter any 6 digits and
   Verify: *Identity verified*; switch on "Simulate an attacker", who does not have the phone: *Verification
-  failed*, the sign-in is blocked); or *Sign-in blocked*, the security team reviewing it. All marked as a
-  simulation. Below that, what the model saw. Changing any input asks to log in again, so each response belongs
-  to the attempt shown.
+  failed*, the sign-in is blocked); or *Sign-in blocked*, the security team reviewing it. The introduction says
+  the sign-in is only simulated. Below that, what the model saw. Changing any input asks to log in again, so
+  each response belongs to the attempt shown.
 - **Feedback at every step.** A hint under the card always says what to do next (press Log in; change the attempt
   and log in again). A short notice confirms each login, another flags at once that the attempt changed, and the
   button then reads *Log in again*. After each login the page scrolls to the response, or, when the attempt

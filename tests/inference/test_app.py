@@ -305,7 +305,8 @@ def test_the_2fa_screen_takes_a_code_as_a_simulation(
     boxes = " ".join(m.value for m in app.markdown if "border-left" in m.value)
     assert "Verification failed." in boxes, "an attacker without the phone is blocked"
     assert "Identity verified." not in boxes
-    assert any(c.value.startswith("Simulation:") for c in app.caption)
+    intro = " ".join(m.value for m in app.markdown)
+    assert "the sign-in is only simulated" in intro, "the disclaimer is on the page"
 
 
 def test_the_card_reacts_to_the_response(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

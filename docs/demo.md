@@ -8,7 +8,7 @@ person would see it (let in, asked to confirm it is them, or blocked), and below
 
 ## How to use it
 
-1. **Pick a login:** the kind of record (a takeover the model blocks or asks for 2FA, a real user asked for 2FA
+1. **Pick an example:** the kind of record (a takeover the model blocks or asks for 2FA, a real user asked for 2FA
    by mistake, a real user let in) and the account (one that had logged in before, or its first login). A card
    shows the selected login at a glance. Each is a real test login.
 2. **Look at the login attempt** on the left: every control is one input the model receives. Each slider's "?"

@@ -168,7 +168,6 @@ RED, ORANGE, YELLOW, GREEN, GREY = (
 )
 TIER_COLOR = {"review / block": RED, "step-up": ORANGE, ALLOW: GREEN}
 KIND_COLOR = {"block": RED, "2fa": ORANGE, "missed": GREY, "false-alarm": YELLOW, "ordinary": GREEN}
-SIMULATION = "Simulation: this demo does not sign anyone in; it only shows the response the model would trigger."
 
 
 @dataclass(frozen=True)
@@ -183,7 +182,7 @@ class TourStep:
 TOUR = (
     TourStep(
         "tour-kinds",
-        "1. Pick a login",
+        "1. Pick an example",
         "Choose what kind of login to test: a takeover the model blocks or asks for 2FA, a real user asked for "
         "2FA by mistake, or a real user let in. Then choose the account: one that had logged in before, or its "
         "first login.",
@@ -334,14 +333,15 @@ def introduction() -> None:
     text.markdown(
         f"This demo accompanies the master's thesis *{THESIS_EN}* ([code and results]({REPOSITORY})). A model "
         "scores every login and responds in proportion to the risk: it lets the person in, asks for a second "
-        "factor (2FA), or blocks the sign-in. The logins are real records (RBA dataset, Wiefling et al. 2022)."
+        "factor (2FA), or blocks the sign-in. The examples are real login records (RBA dataset, Wiefling et "
+        "al. 2022); the sign-in is only simulated, and nobody actually logs in."
     )
     button.button(
         "Take the guided tour", key="tour-start", on_click=_tour_go, args=(0,), width="stretch"
     )
     st.markdown(
         "**How to use it**\n"
-        "1. **Pick a login** below: what kind of record, and which account.\n"
+        "1. **Pick an example** below: what kind of record, and which account.\n"
         "2. **Press Log in** to see what the person sees, and what the model saw.\n"
         "3. **Change the attempt** on the left and log in again. **Reset to the real login** undoes it."
     )
@@ -830,7 +830,6 @@ def response_screen(tier: str, attempt: int) -> None:
                 "For your security, this sign-in was stopped. Our security team is reviewing it and will "
                 "contact you on your recovery email.",
             )
-        st.caption(SIMULATION)
 
 
 def system_view(det: Detector, login: pl.DataFrame, edited: pl.DataFrame, score: float) -> None:
@@ -1025,7 +1024,7 @@ def main() -> None:
         st.info("No logins to show.")
         st.stop()
     introduction()
-    st.subheader("1. Pick a login")
+    st.subheader("1. Pick an example")
     with st.container(key="tour-kinds"):
         login = pick_scenario(counts, picks)
     left, right = st.columns([1, 1.2])

@@ -77,7 +77,7 @@ A local [Streamlit](https://streamlit.io/) app scores a login with the selected 
     make demo
     ```
 
-The page is a simulated sign-in. Pick a login (a takeover blocked or asked for 2FA, a real user asked for 2FA by
+The page is a simulated sign-in: nobody actually logs in. Pick an example (a takeover blocked or asked for 2FA, a real user asked for 2FA by
 mistake or let in; a returning account or its first login); each is a real test login. The left side is the login
 attempt: every control is one input of the model, set to that login's value. Press **Log in** to see the screen
 the person would see (let in, asked to confirm it is them, or blocked) and what the model saw (the score, the
