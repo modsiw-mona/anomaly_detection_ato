@@ -22,7 +22,7 @@ A test recomputes every feature with all later events removed and requires ident
 | --- | --- | --- |
 | `history` | earlier logins of the account, first login, hours since the previous one | dormant accounts, cold start |
 | `user_novelty` | first time this account uses this country, network (ASN), IP, device, OS, browser, user agent, region, city; how many at once | deviation from the owner's own pattern |
-| `global_rarity` | share of all earlier logins with the same value (country, ASN, IP, device, OS, browser, user agent) | works even on a first login |
+| global frequency (`global_rarity`) | share of all earlier logins with the same value (country, ASN, IP, device, OS, browser, user agent) | works even on a first login |
 | `sharing` | distinct accounts that logged in before from the same IP or network | shared attacker infrastructure |
 | `failures` | failed attempts on the account in the last hour and day | password guessing |
 | `campaign` | the network's share of earlier failed and attack-IP attempts, its attempts in the previous 24 hours, accounts that already used the exact user agent | attackers reuse infrastructure across victims |

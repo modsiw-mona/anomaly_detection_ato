@@ -88,7 +88,7 @@ def test_a_never_seen_network_has_no_accounts(
     accounts = app.select_slider(key=ACCOUNTS)
     assert not accounts.disabled
     assert accounts.value == (real_accounts or 5), "back to the viewer's value, and never 0"
-    assert 0 not in accounts.options
+    assert "0" not in accounts.options, "options are text labels"
 
 
 def test_the_table_keeps_the_order_of_the_controls(

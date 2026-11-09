@@ -20,7 +20,8 @@ import numpy as np
 import polars as pl
 
 from data.datasets import DatasetConfig, find_repo_root, load_dataset_config
-from data.features import EVENT_ID, LABEL, USER, features_path
+from data.features import LABEL, USER, features_path
+from data.intermediate import EVENT_ID
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 
-from data import download
 from data.datasets import DatasetConfig
 from data.download import (
     IntegrityError,
@@ -37,7 +36,7 @@ def _serve(monkeypatch: pytest.MonkeyPatch, payload: bytes) -> list[str]:
         calls.append(url)
         return io.BytesIO(payload)
 
-    monkeypatch.setattr(download.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     return calls
 
 
