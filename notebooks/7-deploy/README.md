@@ -88,6 +88,8 @@ no rule was broken, the table always added up to the score, and every reset rest
 
 ## Public deployment (Streamlit Community Cloud)
 
+Live at <https://anomalydetection-ato.streamlit.app>.
+
 The full feature table and score files are gitignored and far too large for a free host, so the demo reads a
 small **bundle** instead (`src/inference/bundle.py`): the eight scenario logins, the 300 reference logins of the
 explanations, the alert thresholds and the summaries the page shows (about 70 KB), plus the model (9.8 MB).
