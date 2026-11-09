@@ -8,6 +8,8 @@
 
 Repository for master's thesis project on **Account Take Over (ATO) detection** in authentication records using anomaly detection methodologies.
 
+**Documentation, method and results:** <https://modsiw-mona.github.io/anomaly_detection_ato/>
+
 ## Features and Tools
 
 Features                                     | Package  | Why?

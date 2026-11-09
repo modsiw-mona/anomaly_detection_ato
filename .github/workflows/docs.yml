@@ -1,22 +1,30 @@
 name: Docs
 
-# Builds the documentation on every pull request that touches it, so broken docs (bad links,
-# missing pages) are caught before merging. Publishing is intentionally disabled (decided
-# 2026-11-01): no token, no GitHub Pages site. Material for MkDocs reaches end of life on
-# 2027-05-05; when a public site is wanted, build it with Zensical, its maintained successor.
+# Builds the documentation site with Zensical. On pull requests it only builds, in strict mode, so broken pages
+# are caught before merging; on main it also publishes the site to GitHub Pages.
 on:
   pull_request:
     branches:
       - main
     paths:
       - "docs/**"
-      - "mkdocs.yml"
-      - "README.md"
+      - "zensical.toml"
+      - ".github/workflows/docs.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "zensical.toml"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -32,7 +40,26 @@ jobs:
         with:
           python-version-file: ".python-version"
 
-      - name: Build docs (strict, nothing published)
-        run: uv run mkdocs build --strict
-        env:
-          NO_MKDOCS_2_WARNING: "1"
+      - name: Build the site (strict, exact versions from uv.lock)
+        run: uv run --only-group docs zensical build --strict --clean
+
+      - name: Upload the site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

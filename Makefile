@@ -56,12 +56,12 @@ pre-commit_update: ## Update pre-commit hooks
 
 #
 ####----Docs----####
-docs: ## Build and serve the documentation
-	@echo "Viewing documentation..."
-	uv run mkdocs serve
+docs: ## Build and serve the documentation site locally (Zensical)
+	@echo "Serving the documentation at http://127.0.0.1:8000 ..."
+	uv run zensical serve
 
-docs_test: ## Test if documentation can be built without warnings or errors
-	@uv run mkdocs build -s
+docs_test: ## Build the documentation site in strict mode (fails on warnings)
+	@uv run zensical build --strict --clean
 #
 
 ####----Clean----####
