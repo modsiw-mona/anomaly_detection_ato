@@ -1,4 +1,4 @@
-.PHONY: install_env data intermediate features split demo notebooks_run test test_verbose test_coverage docs docs_test clean_env switch_main clean_branchs check lint help pre-commit_update
+.PHONY: install_env data intermediate features split demo notebooks_run test test_verbose test_coverage docs docs_test clean_env switch_main clean_branchs check lint help pre-commit_update demo_bundle
 
 ####----Basic configurations----####
 
@@ -29,6 +29,15 @@ split: ## Assign users to dev/test (grouped by user, stratified by label) (DATAS
 demo: ## Run the Streamlit risk demo (needs the model from notebooks 06 and 07)
 	PYTHONPATH=src ATO_DATASET=$(or $(DATASET),rba) uv run streamlit run notebooks/7-deploy/app.py \
 		--server.address=127.0.0.1 --server.headless=true --browser.gatherUsageStats=false
+
+demo_bundle: ## Export the public demo bundle (RELEASE=demo-bundle-vN) and refresh notebooks/7-deploy/{bundle.json,requirements.txt}
+	$(if $(RELEASE),,$(error RELEASE is required, e.g. make demo_bundle RELEASE=demo-bundle-v1))
+	PYTHONPATH=src uv run python -m inference.bundle --dataset $(or $(DATASET),rba) \
+		--out data/08_reporting/demo_bundle --release $(RELEASE) \
+		--base-url https://github.com/modsiw-mona/anomaly_detection_ato/releases/download/$(RELEASE)/ \
+		> notebooks/7-deploy/bundle.json
+	uv export --no-default-groups --no-emit-project --format requirements.txt \
+		-o notebooks/7-deploy/requirements.txt
 
 notebooks_run: ## Execute a notebook in place, e.g. make notebooks_run NB=notebooks/1-data/x.ipynb
 	@echo "Executing $(NB)..."

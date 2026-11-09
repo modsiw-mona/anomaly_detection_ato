@@ -5,8 +5,8 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 
 ## What it does
 
-- **The page explains itself.** It opens with what the demo is (the thesis title, in English and Spanish), what
-  the model answers (a takeover score and a response) and three steps on how to use it.
+- **The page explains itself.** It opens with what the demo is (the thesis title, with a link to this
+  repository), what the model answers (a takeover score and a response) and five steps on how to use it.
 - **Choose a real login, not a row number.** Buttons at the top pick a kind of outcome, each with one line on
   what it means: takeover blocked, takeover asked for 2FA, legitimate login flagged (false alarm), ordinary
   legitimate login. Each kind offers two scenarios, a **returning account** and an account's **first login**;
@@ -85,6 +85,32 @@ explained, implied switches follow their cause, the travel switch follows the ti
 the device type reaches the model, a first login greys out the history inputs, and "Back to the real login"
 restores the original score. On the real data, every scenario was also driven through 60 random control changes:
 no rule was broken, the table always added up to the score, and every reset restored the original score.
+
+## Public deployment (Streamlit Community Cloud)
+
+The full feature table and score files are gitignored and far too large for a free host, so the demo reads a
+small **bundle** instead (`src/inference/bundle.py`): the eight scenario logins, the 300 reference logins of the
+explanations, the alert thresholds and the summaries the page shows (about 70 KB), plus the model (9.8 MB).
+
+- **Where the app gets its data.** With the full data in `data/` (`ATO_DATA_DIR`), it builds the bundle in memory,
+  as before. Otherwise it reads a bundle folder (`ATO_BUNDLE_DIR`), or downloads the published one.
+- **Published bundle.** The files are attached to the GitHub Release
+  [`demo-bundle-v1`](https://github.com/modsiw-mona/anomaly_detection_ato/releases/tag/demo-bundle-v1), never
+  committed. [`bundle.json`](bundle.json) records their SHA-256, and the app checks every file against it before
+  loading anything (the model file is a pickle, so an unverified one is never loaded). The page shown from the
+  bundle is identical to the one built from the full data (checked for every kind of outcome).
+- **Dependencies.** [`requirements.txt`](requirements.txt) is exported from `uv.lock` with hashes. Streamlit Community
+  Cloud uses it because it sits next to the app. scikit-learn and numpy are pinned to the versions the model file
+  was saved with (recorded in `bundle.json` and checked by a test), so a later Dependabot update of `uv.lock` cannot
+  break the public app.
+- **Refreshing it** after the model or the dependencies change:
+  `make demo_bundle RELEASE=demo-bundle-v2`, attach the files in `data/08_reporting/demo_bundle/` to a new release
+  of that name, and commit the new `bundle.json` and `requirements.txt`.
+- **Deploying it** (once, from the Streamlit Community Cloud dashboard, signed in with GitHub): repository
+  `modsiw-mona/anomaly_detection_ato`, branch `main`, main file `notebooks/7-deploy/app.py`, and in *Advanced
+  settings* **Python 3.14** (the code uses Python 3.14's deferred annotations; Streamlit's default is 3.12). No
+  secrets are needed.
+- **Locally** `make demo` still serves on `127.0.0.1` only, with usage statistics off.
 
 ## Evidence
 

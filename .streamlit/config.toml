@@ -1,9 +1,9 @@
-# Demo runs locally only, with no usage statistics sent anywhere.
+# No usage statistics sent anywhere. `make demo` serves on 127.0.0.1 only (set on its command line, so the
+# public deployment on Streamlit Community Cloud can use its own address).
 [browser]
 gatherUsageStats = false
 
 [server]
-address = "127.0.0.1"
 headless = true
 
 [client]
