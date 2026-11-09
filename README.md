@@ -84,10 +84,11 @@ A local [Streamlit](https://streamlit.io/) app scores a login with the selected 
     make demo
     ```
 
-Click a kind of outcome at the top (a takeover blocked, one asked for 2FA, a false alarm, an ordinary login)
-and a scenario (a returning account or an account's first login). Each scenario is a real test login. Every
-signal is a switch set to that login's real value: flip any of them to see the score, the response and the
-explanation change. `?example=<block|2fa|false-alarm|ordinary>&scenario=<returning|first>` in the URL opens a
+Read the short introduction at the top, click a kind of outcome (a takeover blocked, one asked for 2FA, a false
+alarm, an ordinary login) and a scenario (a returning account or an account's first login). Each scenario is a
+real test login. Every control is one input of the model, set to that login's value, with where takeovers and
+legitimate logins usually are: move any of them to see the score, the response and how the score is built
+change. `?example=<block|2fa|false-alarm|ordinary>&scenario=<returning|first>` in the URL opens a
 given scenario. Screenshots and details: [`notebooks/7-deploy/`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/7-deploy/README.md).
 
 ![Demo: a takeover blocked](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/01-takeover-block.png)

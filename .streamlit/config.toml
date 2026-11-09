@@ -11,3 +11,4 @@ toolbarMode = "minimal"
 
 [theme]
 base = "light"
+primaryColor = "#6B3FA0"  # purple accent (buttons, sliders, switches)

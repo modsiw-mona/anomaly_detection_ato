@@ -15,7 +15,6 @@ from inference.what_if import (
     TRAVEL_GAP,
     UNKNOWN_IF,
     gap_of,
-    nearest_row,
     required_signals,
     typical_row,
     with_attack_share,
@@ -164,43 +163,10 @@ def test_attack_share_follows_the_attack_flag() -> None:
     assert with_attack_share(never_seen)["ip_prior_attack_share"][0] is None
 
 
-POOL = pl.DataFrame(
-    {
-        "event_id": [1, 2, 3, 4],
-        "global_share_asn": [1e-6, 2e-3, 1e-6, 5e-2],
-        "ip_prior_users": [0, 0, 55, 3],
-        "ip_prior_attack_share": [None, None, 0.0, 0.0],
-        "asn_prior_attack_share": [0.0, 0.1, 0.0, 0.2],
-    }
-)
-NETWORK_COLUMNS = ["global_share_asn", "ip_prior_users", "asn_prior_attack_share"]
-
-
-def test_nearest_row_keeps_what_the_viewer_did_not_change() -> None:
-    """A rare network with a never-seen IP gets the other rare network with a never-seen IP, not a popular IP."""
-    login = pl.DataFrame(
-        {"global_share_asn": [1.2e-6], "ip_prior_users": [0], "ip_prior_attack_share": [None]}
-    )
-    keep = ["global_share_asn", "ip_prior_users", "ip_prior_attack_share"]
-    row = nearest_row(POOL, login, keep, NETWORK_COLUMNS, by="global_share_asn")
-    assert row == {"global_share_asn": 1e-6, "ip_prior_users": 0, "asn_prior_attack_share": 0.0}
-
-
-def test_nearest_row_judges_shares_of_all_logins_on_a_log_scale() -> None:
-    """0.01% is nearer 0.2% than 0.0001% on a log scale (a factor of 20 against 100), though not in plain numbers."""
-    login = pl.DataFrame({"global_share_asn": [1e-4]})
-    assert nearest_row(POOL, login, ["global_share_asn"], ["event_id"], by="event_id") == {
-        "event_id": 2
-    }
-
-
-def test_without_columns_to_keep_it_is_the_typical_login() -> None:
-    assert nearest_row(POOL, POOL[0], [], ["event_id"], by="global_share_asn") == typical_row(
-        POOL, "global_share_asn", ["event_id"]
-    )
-    assert (
-        nearest_row(POOL.clear(), POOL[0], ["global_share_asn"], ["event_id"], by="event_id") == {}
-    )
+def test_typical_row_is_one_real_login() -> None:
+    pool = pl.DataFrame({"event_id": [1, 2, 3], "share": [0.3, 0.1, 0.2], "users": [30, 10, 20]})
+    assert typical_row(pool, "share", ["share", "users"]) == {"share": 0.2, "users": 20}
+    assert typical_row(pool.clear(), "share", ["share"]) == {}
 
 
 def test_rules_never_contradict_logins_built_by_the_feature_pipeline() -> None:
@@ -233,6 +199,7 @@ def test_every_rule_holds_on_the_rba_data() -> None:
     columns = {c for cs in NEW_IF_NEVER_SEEN.values() for c in cs} | set(UNKNOWN_IF.values())
     columns |= {*SIGNALS, *NEW_IF_NEVER_SEEN, "prior_successes", "hours_since_prev_success"}
     columns |= {"ip_prior_attack_share", "asn_prior_attack_share", "user_prior_countries"}
+    columns |= {"global_share_asn", "asn_prior_users"}
     data = pl.scan_parquet(FEATURES).select(sorted(columns)).filter(pl.col("prior_successes") > 0)
 
     def known(flag: str) -> pl.Expr:
@@ -261,6 +228,12 @@ def test_every_rule_holds_on_the_rba_data() -> None:
         "other IP share 0": ~pl.col("attack_ip") & (attack_share != 0),
         "attack IP, clean network": (attack_share > 0) & (network_share == 0),
         "clean IP, attack-only network": (attack_share == 0) & (network_share == 1),
+        "never-seen network with accounts": (pl.col("global_share_asn") == 0)
+        & (pl.col("asn_prior_users") > 0),
+        "network seen before without accounts": (pl.col("global_share_asn") > 0)
+        & (pl.col("asn_prior_users") == 0),
+        "network seen before, attack history unknown": (pl.col("global_share_asn") > 0)
+        & network_share.is_null(),
     }
     counts = data.select(rule.fill_null(False).sum().alias(name) for name, rule in broken.items())
     assert counts.collect().row(0, named=True) == dict.fromkeys(broken, 0)
