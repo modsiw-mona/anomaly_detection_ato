@@ -1,4 +1,4 @@
-"""Account-takeover risk demo (issue #8): pick a real login, change its inputs, see the model's answer.
+"""Account-takeover risk demo (issues #8 and #30): a login page that shows the proportional response.
 
 Run from the repository root (after ``make data intermediate features split`` and notebooks 06 and 07):
 
@@ -13,9 +13,14 @@ login of its group. The response tiers of issue #7 are shown as *block* (review 
 Every control is one model input, set to the real login's value: yes/no inputs are switches and number inputs
 are sliders over plain steps (the real value included), each with where takeovers and legitimate logins usually
 are. The model re-scores exactly the inputs shown; nothing is taken from another login. Strict relations of the
-data (``inference.what_if``) grey out the inputs that follow from others, with the reason. The table on the
-right shows how the score is built: tree-SHAP contributions per control, in the order of the controls, adding up
-from a typical ordinary login's score to this one's.
+data (``inference.what_if``) grey out the inputs that follow from others, with the reason.
+
+The page is a simulated sign-in: the left side is the login attempt (where and how the person logs in), the right
+side a generic sign-in card. **Log in** shows the screen the person would see for the response tier (welcome, a
+code request, or the sign-in held) and, below it, what the system saw: the score, how often such scores were
+takeovers, the thresholds, and how the score is built (tree-SHAP contributions per control, adding up from a
+typical ordinary login's score to this one's). Nobody is authenticated: the screens only show the response.
+A guided tour dims the page and highlights one part at a time (pure CSS; a tiny script only scrolls to it).
 """
 
 import json
@@ -27,6 +32,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
+import streamlit.components.v1 as components
 
 REPO_ROOT = next(
     p for p in (Path.cwd(), *Path(__file__).resolve().parents) if (p / "pyproject.toml").is_file()
@@ -55,7 +61,11 @@ THESIS_EN = (
 )
 REPOSITORY = "https://github.com/modsiw-mona/anomaly_detection_ato"
 TIER_STYLE = {"review / block": "error", "step-up": "warning", ALLOW: "success"}
-RESPONSE = {"review / block": "block", "step-up": "ask for 2FA (a second factor)", ALLOW: "allow"}
+RESPONSE = {
+    "review / block": "block until verified",
+    "step-up": "ask for 2FA (a second factor)",
+    ALLOW: "allow",
+}
 SHORT = {"review / block": "block", "step-up": "ask for 2FA", ALLOW: "allow"}  # in the table
 KINDS = {  # stable URL slug -> button label, and what the kind means
     "block": ("Takeover → block", "A real takeover the model scores high enough to block."),
@@ -153,6 +163,59 @@ DEFINITIONS = {  # hover text, only where a name uses a technical term
     DEVICE: "In this data, desktop logins were about 10 times more often takeovers than mobile ones.",
 }
 KEY_NOVELTY = ("new_country", "new_asn", "new_device_type", "new_os", "new_browser")
+ACCENT = "#6B3FA0"
+SIMULATION = "Simulation: this demo does not sign anyone in; it only shows the response the model would trigger."
+
+
+@dataclass(frozen=True)
+class TourStep:
+    """One step of the guided tour: the part of the page it highlights and what it says."""
+
+    target: str  # key of the container to highlight
+    title: str
+    text: str
+
+
+TOUR = (
+    TourStep(
+        "tour-kinds",
+        "1. Pick a real login",
+        "Each button loads a real login of users the model never saw in training: takeovers the model blocks "
+        "or challenges, a legitimate login flagged by mistake, an ordinary login. Below, choose a returning "
+        "account or an account's first login.",
+    ),
+    TourStep(
+        "tour-attempt",
+        "2. The login attempt",
+        "Where and how the person logs in: the network, the country, the browser, the device, and what is new "
+        "for the account. Every control is one input of the model; greyed-out ones follow from the others.",
+    ),
+    TourStep(
+        "tour-card",
+        "3. Log in",
+        "The username and password are right in every scenario: a takeover uses stolen credentials, so the "
+        "password alone cannot tell the owner from the attacker. Log in to see what the model decides.",
+    ),
+    TourStep(
+        "tour-response",
+        "4. What the person sees",
+        "A response proportional to the risk: the login goes through, the person is asked for a code (a second "
+        "factor the attacker does not have), or the sign-in is held until they verify their identity.",
+    ),
+    TourStep(
+        "tour-system",
+        "5. What the system saw",
+        "The takeover score, how often scores like it were takeovers in the data, and the two thresholds. The "
+        "table shows how much each input raised or lowered the score.",
+    ),
+    TourStep(
+        "tour-attempt",
+        "6. Try your own",
+        "Change any input and log in again to see how the response changes. Back to the real login undoes "
+        "your changes. That is the tour.",
+    ),
+)
+RESPONSE_STEP = 3  # from this step on, the tour logs in so the response is on the page
 OTHER = "Other inputs (kept as in the real login)"
 START = "Typical ordinary login (starting point)"
 MIN_SCORE_CHANGE = 5e-5  # below this the 4-decimal score does not move
@@ -262,21 +325,24 @@ def _real(login: pl.DataFrame, column: str) -> bool:
 def introduction() -> None:
     st.markdown(
         f"This demo accompanies the master's thesis *{THESIS_EN}* ([code and results]({REPOSITORY})). "
-        "A machine-learning model gives each successful login a **takeover score** and a **response**: "
-        "allow it, ask for a second factor (2FA), or block it. The logins are real records of a public "
-        "synthetic dataset (RBA dataset, Wiefling et al. 2022), from users the model never saw in training."
+        "Every successful login gets a **takeover score** from a machine-learning model, and a **response** "
+        "in proportion to it: let the person in, ask for a second factor (2FA), or hold the sign-in until "
+        "they verify their identity. The logins are real records of a public synthetic dataset (RBA dataset, "
+        "Wiefling et al. 2022), from users the model never saw in training."
     )
     st.markdown(
         "**How to use it**\n"
-        "1. **Choose one of the kinds of authentication records** below.\n"
-        "2. **Choose a scenario:** an account that had logged in before, or an account's first login.\n"
-        "3. **See an example:** the left side fills with the inputs of a real login of that kind, and the "
-        "right side shows the model's score and response for it.\n"
-        "4. **Play with the model:** change the login's inputs on the left and watch the score and the "
-        "recommended response change. **Back to the real login** undoes your changes.\n"
-        "5. **Compare in the table** *How the score is built*: each input's real value next to yours, and "
-        "how much it raises (+) or lowers (-) the score. The last row compares the two scores."
+        "1. **Choose a kind of authentication record** below, and a scenario: an account that had logged in "
+        "before, or an account's first login.\n"
+        "2. **Look at the login attempt** on the left: where and how a real person, or an attacker, logged in.\n"
+        "3. **Press Log in** on the sign-in card: see the screen the person would see and, below it, what the "
+        "system saw.\n"
+        "4. **Change the attempt** on the left and log in again to see how the response changes. **Back to "
+        "the real login** undoes your changes.\n"
+        "5. **Compare in the table** *How the score is built*: how much each input raises (+) or lowers (-) "
+        "the score."
     )
+    st.button("Take the guided tour", key="tour-start", on_click=_tour_go, args=(0,))
 
 
 def load_inputs(login: pl.DataFrame) -> None:
@@ -466,11 +532,11 @@ def input_panel(login: pl.DataFrame) -> pl.DataFrame:
     required = current_required(login, located)
     follow_rules(required)
 
-    st.subheader("The login's inputs")
+    st.subheader("The login attempt")
     st.caption(
-        "Each control is one input the model receives, set to the real login's value. Move any of "
-        "them: the model re-scores the login with exactly these values. Greyed-out controls follow from "
-        "the others (the ? says why)."
+        "Where and how this person is logging in. Each control is one input the model receives, set to the "
+        "real login's value; change any of them and log in again. Greyed-out controls follow from the "
+        "others (the ? says why)."
     )
     st.markdown("**Where the login comes from**")
     for column in SLIDERS:
@@ -505,7 +571,7 @@ def input_panel(login: pl.DataFrame) -> pl.DataFrame:
             disabled=first_login or reason is not None,
             help=_help(column, reason),
         )
-    st.button("Back to the real login", on_click=load_inputs, args=(login,))
+    st.button("Back to the real login", key="back", on_click=load_inputs, args=(login,))
     return apply_switches(login, located, first_login)
 
 
@@ -619,52 +685,201 @@ def score_table(
     )
 
 
-def risk_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None:
-    """Right column: score, what it means, the response, and how the score is built."""
-    score, original = float(det.score(edited)[0]), float(det.score(login)[0])
+def attempt_id(edited: pl.DataFrame) -> int:
+    """Identifies the login attempt as the model sees it: changes when any input changes."""
+    return int(edited.hash_rows(seed=0)[0])
+
+
+def username(login: pl.DataFrame) -> str:
+    return f"user-{str(login['user_id'][0])[-4:]}"
+
+
+def sign_in_card(login: pl.DataFrame, attempt: int) -> bool:
+    """The generic sign-in card; True once this exact attempt was submitted."""
+    state = st.session_state
+    with st.container(key="tour-card", border=True):
+        st.markdown("#### Example SSO")
+        st.caption("Sign in to continue")
+        st.text_input("Username", value=username(login), disabled=True)
+        st.text_input("Password", value="correct-password", type="password", disabled=True)
+        if st.button("Log in", key="login", type="primary", width="stretch"):
+            state["submitted"] = attempt
+        st.caption(
+            "The credentials are valid in every scenario: a takeover uses the real password, so only "
+            "where and how the login happens can tell the owner from an attacker."
+        )
+    if state.get("submitted") == attempt:
+        return True
+    if state.get("submitted") is not None:
+        st.info("The login attempt changed. Log in again to see the new response.")
+    return False
+
+
+def response_screen(tier: str) -> None:
+    """What the person would see, by response tier (simulated)."""
+    with st.container(key="tour-response", border=True):
+        st.markdown("**What the person sees**")
+        if tier == ALLOW:
+            st.success("**Welcome back.** You are signed in.")
+        elif tier == "step-up":
+            st.warning(
+                "**Confirm it's you.** We sent a 6-digit code to the phone number on this account. "
+                "Enter it to continue."
+            )
+            code = st.text_input(
+                "Verification code", key="code", max_chars=6, placeholder="6-digit code"
+            )
+            if st.button("Verify", key="verify") or code:
+                st.caption(
+                    "In a real service the code would now be checked. The account's owner has the phone and "
+                    "continues; an attacker who only has the password cannot."
+                )
+        else:
+            st.error(
+                "**Sign-in on hold.** For your security this sign-in was stopped. Verify your identity to "
+                "continue (account recovery)."
+            )
+            st.caption(
+                "In a real service this leads to account recovery or to a review by the security team, "
+                "before anyone gets in."
+            )
+        st.caption(SIMULATION)
+
+
+def system_view(det: Detector, login: pl.DataFrame, edited: pl.DataFrame, score: float) -> None:
+    """What the system saw: the score, what it means, the thresholds and how the score is built."""
+    original = float(det.score(login)[0])
     delta = score - original
     tier = det.tier(score)
-    st.subheader("The model's answer")
-    st.metric(
-        "Takeover score",
-        f"{score:.4f}",
-        delta=f"{delta:+.4f} from the real login's {original:.4f}"
-        if abs(delta) >= MIN_SCORE_CHANGE
-        else None,
-        delta_color="inverse",
-    )
+    with st.container(key="tour-system"):
+        st.subheader("What the system saw")
+        st.metric(
+            "Takeover score",
+            f"{score:.4f}",
+            delta=f"{delta:+.4f} from the real login's {original:.4f}"
+            if abs(delta) >= MIN_SCORE_CHANGE
+            else None,
+            delta_color="inverse",
+        )
+        st.markdown(
+            frequency(score),
+            help="The 7.9 million logins of the dataset's training part, each scored by a model that had "
+            "not seen it during training.",
+        )
+        getattr(st, TIER_STYLE[tier])(
+            f"Response: **{RESPONSE[tier]}** ({position(det, score)})", icon=None
+        )
+        st.caption(
+            f"Ask for 2FA from {det.thresholds['step-up']:.4f}, the riskiest 1% of the dataset's logins; "
+            f"block from {det.thresholds['review / block']:.4f}, the riskiest 0.1%. The service sets these "
+            "alert budgets; the scores they fall on were fixed before the final test."
+        )
+        st.subheader("How the score is built")
+        table = score_table(det, login, edited, score, original)
+        last = len(table) - 1
+        if delta >= MIN_SCORE_CHANGE:
+            total = "background-color: #fdecea; color: #b42318; font-weight: bold"
+        elif delta <= -MIN_SCORE_CHANGE:
+            total = "background-color: #e7f6ec; color: #1e7a34; font-weight: bold"
+        else:
+            total = "font-weight: bold"
+
+        def style(row: pd.Series) -> list[str]:
+            if row.name == last:
+                return [total] * len(row)
+            changed = row["real login"] != row["with your changes"]
+            return ["font-weight: bold" if changed else ""] * len(row)
+
+        st.table(table.style.apply(style, axis=1).hide(axis="index"))
+        st.caption(
+            "Start from a typical ordinary login's score, add each contribution, and you get the score "
+            "(tree SHAP). Rows follow the controls on the left; changed inputs in bold. The last row is red "
+            "when your changes raised the score and green when they lowered it."
+        )
+
+
+def position(det: Detector, score: float) -> str:
+    """Where a score falls against the two thresholds."""
+    block, step_up = det.thresholds["review / block"], det.thresholds["step-up"]
+    if score >= block:
+        return f"{score:.4f} is at or above the block threshold, {block:.4f}: the riskiest 0.1%"
+    if score >= step_up:
+        return f"{score:.4f} is between the 2FA threshold, {step_up:.4f}, and the block threshold, {block:.4f}"
+    return f"{score:.4f} is below the 2FA threshold, {step_up:.4f}"
+
+
+def login_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None:
+    """Right column: the sign-in card; once submitted, the response and what the system saw."""
+    attempt = attempt_id(edited)
+    step = _tour_step()
+    if step is not None and step >= RESPONSE_STEP:
+        st.session_state["submitted"] = attempt  # the tour logs in to show the response
+    if not sign_in_card(login, attempt):
+        return
+    score = float(det.score(edited)[0])
+    response_screen(det.tier(score))
+    system_view(det, login, edited, score)
+
+
+# ---------- the guided tour --------------------------------------------------------------------------
+
+
+def _tour_step() -> int | None:
+    step = st.session_state.get("tour")
+    return step if isinstance(step, int) else None
+
+
+def _tour_go(step: int | None) -> None:
+    st.session_state["tour"] = step
+
+
+def tour() -> None:
+    """The current tour step: dim the page except the highlighted part, and a box with Back / Next / Skip."""
+    step = _tour_step()
+    if step is None:
+        return
+    current = TOUR[step]
     st.markdown(
-        frequency(score),
-        help="The 7.9 million logins of the dataset's training part, each scored by a model that had "
-        "not seen it during training.",
+        f"""<style>
+        .st-key-{current.target} {{
+            position: relative; z-index: 1000; border-radius: 0.6rem;
+            background-color: var(--background-color, #ffffff);
+            box-shadow: 0 0 0 0.6rem var(--background-color, #ffffff),
+                0 0 0 calc(0.6rem + 4px) {ACCENT}, 0 0 0 200vmax rgba(20, 12, 32, 0.55);
+        }}
+        .st-key-tour-box {{
+            position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 1001; width: min(26rem, 90vw);
+            padding: 1rem 1.2rem; border-radius: 0.8rem; background-color: var(--background-color, #ffffff);
+            box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.35); border-top: 4px solid {ACCENT};
+        }}
+        </style>""",
+        unsafe_allow_html=True,
     )
-    getattr(st, TIER_STYLE[tier])(f"Response: **{RESPONSE[tier]}**", icon=None)
-    st.caption(
-        f"Ask for 2FA from {det.thresholds['step-up']:.4f}, the riskiest 1% of the dataset's logins; "
-        f"block from {det.thresholds['review / block']:.4f}, the riskiest 0.1%. The service sets these "
-        "alert budgets; the scores they fall on were fixed before the final test."
-    )
-    st.subheader("How the score is built")
-    table = score_table(det, login, edited, score, original)
-    last = len(table) - 1
-    if delta >= MIN_SCORE_CHANGE:
-        total = "background-color: #fdecea; color: #b42318; font-weight: bold"
-    elif delta <= -MIN_SCORE_CHANGE:
-        total = "background-color: #e7f6ec; color: #1e7a34; font-weight: bold"
-    else:
-        total = "font-weight: bold"
-
-    def style(row: pd.Series) -> list[str]:
-        if row.name == last:
-            return [total] * len(row)
-        changed = row["real login"] != row["with your changes"]
-        return ["font-weight: bold" if changed else ""] * len(row)
-
-    st.table(table.style.apply(style, axis=1).hide(axis="index"))
-    st.caption(
-        "Start from a typical ordinary login's score, add each contribution, and you get the score "
-        "(tree SHAP). Rows follow the controls on the left; changed inputs in bold. The last row is red "
-        "when your changes raised the score and green when they lowered it."
+    with st.container(key="tour-box"):
+        st.markdown(f"**{current.title}**")
+        st.write(current.text)
+        st.caption(f"Step {step + 1} of {len(TOUR)}")
+        back, forward, skip = st.columns(3)
+        back.button(
+            "Back", key="tour-back", on_click=_tour_go, args=(step - 1,), disabled=step == 0
+        )
+        last = step == len(TOUR) - 1
+        forward.button(
+            "Done" if last else "Next",
+            key="tour-next",
+            type="primary",
+            on_click=_tour_go,
+            args=(None if last else step + 1,),
+        )
+        skip.button("Skip", key="tour-skip", on_click=_tour_go, args=(None,))
+    components.html(  # scroll the highlighted part into view (the page is in this frame's parent)
+        f"""<script>
+        try {{
+            const target = window.parent.document.querySelector(".st-key-{current.target}");
+            if (target) {{ target.scrollIntoView({{behavior: "smooth", block: "center"}}); }}
+        }} catch (error) {{}}
+        </script>""",
+        height=0,
     )
 
 
@@ -696,12 +911,14 @@ def main() -> None:
         st.info("No logins to show.")
         st.stop()
     introduction()
-    login = pick_scenario(counts, picks)
+    with st.container(key="tour-kinds"):
+        login = pick_scenario(counts, picks)
     left, right = st.columns([1, 1.2])
-    with left:
+    with left, st.container(key="tour-attempt"):
         edited = input_panel(login)
     with right:
-        risk_panel(det, login, edited)
+        login_panel(det, login, edited)
+    tour()
 
 
 main()

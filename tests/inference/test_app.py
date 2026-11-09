@@ -35,29 +35,42 @@ def _choose(app: AppTest, scenario: str) -> bool:
     return False
 
 
+def _log_in(app: AppTest) -> AppTest:
+    """Press Log in: the response and what the system saw appear for the current attempt."""
+    app.button(key="login").click().run()
+    assert not app.exception, app.exception
+    return app
+
+
 def _table(app: AppTest) -> pd.DataFrame:
-    table: pd.DataFrame = app.table[0].value  # "How the score is built"
+    table: pd.DataFrame = _log_in(app).table[0].value  # "How the score is built"
     return table
+
+
+def _score(app: AppTest) -> str:
+    return str(_log_in(app).metric[0].value)
 
 
 def test_demo_scores_a_login_and_reacts_to_its_inputs(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = _open(data_dir, monkeypatch)
-    assert app.metric[0].label == "Takeover score"
-    assert not app.metric[0].delta, "the real login, before any change, is not 'changed'"
     intro = " ".join(m.value for m in app.markdown)
     assert "How to use it" in intro, "the page explains itself"
     assert "github.com/modsiw-mona/anomaly_detection_ato" in intro, "and links its code"
+    assert not app.metric, "the score stays hidden until Log in"
+    _log_in(app)
+    assert app.metric[0].label == "Takeover score"
+    assert not app.metric[0].delta, "the real login, before any change, is not 'changed'"
     assert _choose(app, "returning")
-    before = app.metric[0].value
+    before = _score(app)
     attack = app.toggle(key="in-attack_ip")
     attack.set_value(not attack.value).run()
     assert not app.exception, app.exception
-    assert app.metric[0].value != before, "the change reaches the model"
+    assert _score(app) != before, "the change reaches the model"
     assert app.metric[0].delta.endswith(f"from the real login's {before}")
-    app.button[-1].click().run()  # back to the real login
-    assert app.metric[0].value == before
+    app.button(key="back").click().run()
+    assert _score(app) == before
     assert not app.metric[0].delta
 
 
@@ -104,13 +117,13 @@ def test_the_table_keeps_the_order_of_the_controls(
     assert list(_table(app)["input"]) == order, "rows do not jump when a value changes"
     total = _table(app).iloc[-1]
     assert total["effect"][0] in "↑↓", "the last row says whether the score went up or down"
-    assert total["with your changes"].split()[0] == app.metric[0].value
+    assert total["with your changes"].split()[0] == _score(app)
 
 
 def test_contributions_add_up_to_the_score(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = _open(data_dir, monkeypatch)
     parts = _table(app)["contribution"].iloc[:-1].astype(float).sum()
-    assert parts == pytest.approx(float(app.metric[0].value), abs=0.01)
+    assert parts == pytest.approx(float(_score(app)), abs=0.01)
 
 
 def test_implied_signal_follows_its_cause(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -134,6 +147,7 @@ def test_undoing_a_cause_restores_the_implied_signal(
     app.toggle(key="in-new_asn").set_value(real_asn).run()
     assert not app.exception, app.exception
     assert app.toggle(key="in-new_ip").value == before
+    _log_in(app)
     assert not app.metric[0].delta, "switching a signal on and off again is no change"
 
 
@@ -185,8 +199,11 @@ def test_technical_terms_are_explained(data_dir: Path, monkeypatch: pytest.Monke
 
 
 def test_the_score_is_put_in_context(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    app = _open(data_dir, monkeypatch)
+    app = _log_in(_open(data_dir, monkeypatch))
     assert any(m.value.startswith("In the dataset,") for m in app.markdown)
+    assert any("threshold" in e.value for e in [*app.error, *app.warning, *app.success]), (
+        "where it falls"
+    )
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,3 +213,90 @@ def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     st.cache_data.clear()
     app = AppTest.from_file(str(APP), default_timeout=60).run()
     assert app.error, "a clear message instead of a crash"
+
+
+SCREENS = {"block": "Sign-in on hold", "2fa": "Confirm it's you", "allow": "Welcome back"}
+
+
+def _screen(app: AppTest) -> str:
+    """Which response screen the page shows (the person's view, above what the system saw)."""
+    shown = " ".join(e.value for e in [*app.error, *app.warning, *app.success])
+    found = [tier for tier, text in SCREENS.items() if text in shown]
+    assert len(found) == 1, shown
+    return found[0]
+
+
+def test_log_in_shows_the_screen_of_each_tier(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The response the person sees always matches the tier of the score the system saw."""
+    app = _open(data_dir, monkeypatch)
+    seen = set()
+    for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
+        app.button(key=key).click().run()
+        for scenario in app.radio[0].options:
+            app.radio[0].set_value(scenario).run()
+            assert not app.metric, "a new attempt starts on the sign-in card"
+            _log_in(app)
+            tier = _table(app).iloc[-1]["with your changes"].split("(")[1].rstrip(")")
+            expected = {"block": "block", "ask for 2FA": "2fa", "allow": "allow"}[tier]
+            assert _screen(app) == expected, (key, scenario)
+            seen.add(expected)
+    assert len(seen) >= 2, "the toy data covers more than one tier"  # noqa: PLR2004
+
+
+def test_a_changed_attempt_asks_to_log_in_again(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _log_in(_open(data_dir, monkeypatch))
+    assert app.metric
+    attack = app.toggle(key="in-attack_ip")
+    attack.set_value(not attack.value).run()
+    assert not app.metric, "the old response is not shown for a new attempt"
+    assert any("Log in again" in i.value for i in app.info)
+    _log_in(app)
+    assert app.metric, "logging in again shows the new response"
+
+
+def test_the_2fa_screen_takes_a_code_as_a_simulation(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
+        app.button(key=key).click().run()
+        if _screen(_log_in(app)) == "2fa":
+            break
+    else:
+        pytest.skip("no scenario asks for 2FA in the toy data")
+    app.text_input(key="code").input("123456").run()
+    assert not app.exception, app.exception
+    assert any("attacker who only has the password cannot" in c.value for c in app.caption)
+    assert any(c.value.startswith("Simulation:") for c in app.caption)
+
+
+def test_the_guided_tour_highlights_each_part(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    assert not [b for b in app.button if b.key == "tour-next"], "no tour until asked"
+    app.button(key="tour-start").click().run()
+    targets = []
+    for _ in range(10):
+        styles = " ".join(m.value for m in app.markdown if "<style>" in m.value)
+        parts = ("kinds", "attempt", "card", "response", "system")
+        targets.append(next(k for k in parts if f"st-key-tour-{k} " in styles))
+        if targets[-1] == "response":
+            assert app.metric, "the tour logs in to show the response"
+        next_button = app.button(key="tour-next")
+        if next_button.label == "Done":
+            next_button.click().run()
+            break
+        next_button.click().run()
+    assert targets == ["kinds", "attempt", "card", "response", "system", "attempt"]
+    assert not [b for b in app.button if b.key == "tour-next"], "Done closes the tour"
+    app.button(key="tour-start").click().run()
+    app.button(key="tour-next").click().run()
+    app.button(key="tour-back").click().run()
+    assert "st-key-tour-kinds " in " ".join(m.value for m in app.markdown if "<style>" in m.value)
+    app.button(key="tour-skip").click().run()
+    assert not [b for b in app.button if b.key == "tour-next"], "Skip closes the tour"

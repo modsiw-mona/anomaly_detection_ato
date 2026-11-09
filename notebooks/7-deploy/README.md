@@ -41,9 +41,20 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
       country change is a new country;
     - every earlier attempt from an attack-listed IP is an attack attempt (and none from another IP); a network
       with no attack attempts has no attack-listed IP, and one with only attack attempts has only such IPs.
-- **The model's answer:** the takeover score, **what a score this high meant in the dataset** (for example "50 of
+- **A simulated sign-in (issue #30).** The left side is *the login attempt*: where and how the person logs in.
+  The right side is a generic sign-in card ("Example SSO") with the username and password filled in: in a
+  takeover the attacker has the right password, so the credentials are valid in every scenario. The score stays
+  hidden until **Log in**; then the page shows the screen the person would see for the response tier (*Welcome
+  back*; *Confirm it's you* with a code field; *Sign-in on hold* until they verify their identity), marked as a
+  simulation, and below it what the system saw. Changing any input asks to log in again, so each response belongs
+  to the attempt shown.
+- **Guided tour.** *Take the guided tour* dims the page and highlights one part at a time (the kinds of record,
+  the login attempt, the sign-in card, what the person sees, what the system saw), with Back, Next and Skip. It is
+  plain CSS (a highlighted container above a dimmed page); a two-line script only scrolls the part into view.
+- **What the system saw:** the takeover score, **what a score this high meant in the dataset** (for example "50 of
   the 103 development logins scoring 0.5 or more were takeovers", against about 1 in 70,000 overall), the
-  **response** (allow, ask for 2FA, block) and the thresholds: the riskiest 1% of development logins (score
+  **response** (allow, ask for 2FA, block until verified), where the score falls against the two thresholds, and
+  the thresholds themselves: the riskiest 1% of development logins (score
   0.0033) are asked for 2FA and the riskiest 0.1% (0.0333) are blocked. These alert budgets were fixed before
   any model was trained, and turned into scores in issue #7 before the test set was
   opened. The demo names the tiers of issue #7 in plain words: *block* for review / block and *ask for 2FA* for
@@ -118,10 +129,10 @@ explanations, the alert thresholds and the summaries the page shows (about 70 KB
 
 | | |
 | --- | --- |
-| ![Takeover blocked](screenshots/01-takeover-block.png) | **Takeover blocked (returning account).** The introduction (with a link to this repository) and the five steps at the top; three earlier logins; the network is rare (0.00012% of logins, 7 accounts), quiet in the previous 24 hours and has a 70% attack-IP history, from a rare country and browser. Under each slider, where takeovers and legitimate logins usually are; on the right, what a score of 0.59 meant in the dataset (50 of 103 logins were takeovers) and how the score is built. |
-| ![Takeover on a first login](screenshots/02-first-login.png) | **Takeover on a new account's first login.** There is no earlier login to compare with, so the account-history inputs are greyed out; the score comes from where the login comes from. |
-| ![Attack-listed IP switched off](screenshots/03-attack-ip-off.png) | **The takeover asked for 2FA, its attack-listed IP switched off.** Only that input changes; its row is in bold and the last row turns green: 0.0300 to 0.0100, still ask for 2FA. |
-| ![Legitimate login flagged](screenshots/04-false-alarm.png) | **False alarm (returning account).** A legitimate login asked for 2FA: the score comes from a combination of smaller contributions. |
+| ![Takeover blocked](screenshots/01-takeover-block.png) | **Takeover, sign-in held (returning account).** The attempt on the left: three earlier logins; a rare network (0.00012% of logins, 7 accounts), quiet in the previous 24 hours, with a 70% attack-IP history; a rare country and browser. After **Log in**, the person sees "Sign-in on hold"; the system saw a score of 0.5866, above the block threshold, where 50 of 103 development logins were takeovers, and the table shows how the score is built. |
+| ![Takeover asked for 2FA](screenshots/02-takeover-2fa.png) | **Takeover, asked for a second factor.** The person is asked for a code sent to the account's phone, which the attacker does not have; the score, 0.0300, falls between the two thresholds. |
+| ![Ordinary login allowed](screenshots/03-ordinary-allow.png) | **Ordinary legitimate login, allowed.** "Welcome back": a common network, country and browser give a score of 0.0000, below the 2FA threshold; every contribution is small. |
+| ![Guided tour](screenshots/04-guided-tour.png) | **Guided tour, step 4 of 6.** The page is dimmed except the part the step explains (here, what the person sees), with Back, Next and Skip. |
 
-Screenshots taken from the running app with headless Chrome (temporary profile) on 2026-11-08. The demo binds to
-`127.0.0.1` with Streamlit's usage statistics off, both in `make demo` and in `.streamlit/config.toml`.
+Screenshots taken from the running app with headless Chrome (temporary profile) on 2026-11-09. `make demo`
+binds to `127.0.0.1` with Streamlit's usage statistics off.
