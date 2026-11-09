@@ -6,7 +6,8 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 ## What it does
 
 - **The page explains itself.** It opens with what the demo is (the thesis title, with a link to this
-  repository), what the model answers (a takeover score and a response) and five steps on how to use it.
+  repository), what the model gives each login (a takeover score and a proportional response) and five steps
+  on how to use it.
 - **Choose a real login, not a row number.** Buttons at the top pick a kind of outcome, each with one line on
   what it means: takeover blocked, takeover asked for 2FA, legitimate login flagged (false alarm), ordinary
   legitimate login. Each kind offers two scenarios, a **returning account** and an account's **first login**;
@@ -50,7 +51,7 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
   to the attempt shown.
 - **Guided tour.** *Take the guided tour* dims the page and highlights one part at a time (the kinds of record,
   the login attempt, the sign-in card, what the person sees, what the system saw), with Back, Next and Skip. It is
-  plain CSS (a highlighted container above a dimmed page); a two-line script only scrolls the part into view.
+  plain CSS (a highlighted container above a dimmed page); a tiny script only scrolls the part into view.
 - **What the system saw:** the takeover score, **what a score this high meant in the dataset** (for example "50 of
   the 103 development logins scoring 0.5 or more were takeovers", against about 1 in 70,000 overall), the
   **response** (allow, ask for 2FA, block until verified), where the score falls against the two thresholds, and

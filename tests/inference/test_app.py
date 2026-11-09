@@ -1,5 +1,6 @@
 """The Streamlit demo runs end to end on a toy data directory (no real data needed)."""
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -245,13 +246,32 @@ def test_log_in_shows_the_screen_of_each_tier(
     assert len(seen) >= 2, "the toy data covers more than one tier"  # noqa: PLR2004
 
 
+def _change(app: AppTest, control: str) -> None:
+    """Move one control away from its current value."""
+    if control == "attack switch":
+        attack = app.toggle(key="in-attack_ip")
+        attack.set_value(not attack.value).run()
+    elif control == "device":
+        device = app.radio(key="in-device_type")
+        device.set_value(next(d for d in device.options if d != device.value)).run()
+    elif control == "time gap":
+        gap = app.select_slider(key="in-gap")
+        gap.set_value(next(g for g in gap.options if g != gap.value)).run()
+    else:
+        share = app.select_slider(key=NETWORK_SHARE)
+        share.set_value(next(v for v in (0.3, 0.0) if v != share.value)).run()
+    assert not app.exception, app.exception
+
+
+@pytest.mark.parametrize("control", ["attack switch", "device", "time gap", "network share"])
 def test_a_changed_attempt_asks_to_log_in_again(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch, control: str
 ) -> None:
-    app = _log_in(_open(data_dir, monkeypatch))
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    _log_in(app)
     assert app.metric
-    attack = app.toggle(key="in-attack_ip")
-    attack.set_value(not attack.value).run()
+    _change(app, control)
     assert not app.metric, "the old response is not shown for a new attempt"
     assert any("Log in again" in i.value for i in app.info)
     _log_in(app)
@@ -268,10 +288,40 @@ def test_the_2fa_screen_takes_a_code_as_a_simulation(
             break
     else:
         pytest.skip("no scenario asks for 2FA in the toy data")
-    app.text_input(key="code").input("123456").run()
+    code = next(f for f in app.text_input if f.label == "Verification code")
+    assert not code.value, "a new attempt starts with an empty code"
+    code.input("123456").run()
     assert not app.exception, app.exception
     assert any("attacker who only has the password cannot" in c.value for c in app.caption)
+    assert any("Any code works in this demo" in c.value for c in app.caption)
     assert any(c.value.startswith("Simulation:") for c in app.caption)
+
+
+def _highlighted(app: AppTest) -> str:
+    styles = " ".join(m.value for m in app.markdown if "<style>" in m.value)
+    parts = ("kinds", "attempt", "card", "response", "system")
+    return next(k for k in parts if f"st-key-tour-{k} " in styles)
+
+
+def _part_is_shown(app: AppTest, part: str) -> bool:
+    """The highlighted part's own content is on the page, not only in the tour's CSS."""
+    keys = {b.key for b in app.button}
+    if part == "kinds":
+        return any(k and k.startswith("kind-") for k in keys)
+    if part == "attempt":
+        return bool([t for t in app.toggle if t.key == "in-attack_ip"]) and "back" in keys
+    if part == "card":
+        return "login" in keys
+    if part == "response":
+        return bool(_screen(app))
+    return bool(app.metric) and bool(app.table)
+
+
+def test_every_tour_target_is_a_container_of_the_page() -> None:
+    source = APP.read_text()
+    targets = set(re.findall(r'"(tour-(?:kinds|attempt|card|response|system))"', source))
+    assert len(targets) == 5, targets  # noqa: PLR2004
+    assert all(f'key="{t}"' in source for t in targets), "a step would highlight nothing"
 
 
 def test_the_guided_tour_highlights_each_part(
@@ -282,21 +332,22 @@ def test_the_guided_tour_highlights_each_part(
     app.button(key="tour-start").click().run()
     targets = []
     for _ in range(10):
-        styles = " ".join(m.value for m in app.markdown if "<style>" in m.value)
-        parts = ("kinds", "attempt", "card", "response", "system")
-        targets.append(next(k for k in parts if f"st-key-tour-{k} " in styles))
-        if targets[-1] == "response":
-            assert app.metric, "the tour logs in to show the response"
+        part = _highlighted(app)
+        assert _part_is_shown(app, part), part
+        targets.append(part)
         next_button = app.button(key="tour-next")
         if next_button.label == "Done":
-            next_button.click().run()
             break
         next_button.click().run()
     assert targets == ["kinds", "attempt", "card", "response", "system", "attempt"]
+    _change(app, "attack switch")  # the last step: "change any input and log in again"
+    assert not app.metric, "the tour no longer logs in for the viewer"
+    assert any("Log in again" in i.value for i in app.info)
+    app.button(key="tour-next").click().run()
     assert not [b for b in app.button if b.key == "tour-next"], "Done closes the tour"
     app.button(key="tour-start").click().run()
     app.button(key="tour-next").click().run()
     app.button(key="tour-back").click().run()
-    assert "st-key-tour-kinds " in " ".join(m.value for m in app.markdown if "<style>" in m.value)
+    assert _highlighted(app) == "kinds"
     app.button(key="tour-skip").click().run()
     assert not [b for b in app.button if b.key == "tour-next"], "Skip closes the tour"

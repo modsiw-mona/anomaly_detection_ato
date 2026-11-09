@@ -32,7 +32,6 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-import streamlit.components.v1 as components
 
 REPO_ROOT = next(
     p for p in (Path.cwd(), *Path(__file__).resolve().parents) if (p / "pyproject.toml").is_file()
@@ -215,7 +214,10 @@ TOUR = (
         "your changes. That is the tour.",
     ),
 )
-RESPONSE_STEP = 3  # from this step on, the tour logs in so the response is on the page
+RESPONSE_STEPS = (
+    3,
+    4,
+)  # the steps that highlight the response: the tour logs in so it is on the page
 OTHER = "Other inputs (kept as in the real login)"
 START = "Typical ordinary login (starting point)"
 MIN_SCORE_CHANGE = 5e-5  # below this the 4-decimal score does not move
@@ -601,7 +603,7 @@ def apply_switches(login: pl.DataFrame, located: pl.DataFrame, first_login: bool
     return edited
 
 
-# ---------- the model's answer -----------------------------------------------------------------------
+# ---------- what the system saw -----------------------------------------------------------------------
 
 
 def frequency(score: float) -> str:
@@ -715,7 +717,7 @@ def sign_in_card(login: pl.DataFrame, attempt: int) -> bool:
     return False
 
 
-def response_screen(tier: str) -> None:
+def response_screen(tier: str, attempt: int) -> None:
     """What the person would see, by response tier (simulated)."""
     with st.container(key="tour-response", border=True):
         st.markdown("**What the person sees**")
@@ -727,12 +729,15 @@ def response_screen(tier: str) -> None:
                 "Enter it to continue."
             )
             code = st.text_input(
-                "Verification code", key="code", max_chars=6, placeholder="6-digit code"
+                "Verification code",
+                key=f"code-{attempt}",  # a new attempt starts with an empty field
+                max_chars=6,
+                placeholder="any 6 digits (simulation)",
             )
             if st.button("Verify", key="verify") or code:
                 st.caption(
-                    "In a real service the code would now be checked. The account's owner has the phone and "
-                    "continues; an attacker who only has the password cannot."
+                    "Any code works in this demo. In a real service the code would now be checked: the "
+                    "account's owner has the phone and continues; an attacker who only has the password cannot."
                 )
         else:
             st.error(
@@ -811,13 +816,12 @@ def position(det: Detector, score: float) -> str:
 def login_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None:
     """Right column: the sign-in card; once submitted, the response and what the system saw."""
     attempt = attempt_id(edited)
-    step = _tour_step()
-    if step is not None and step >= RESPONSE_STEP:
+    if _tour_step() in RESPONSE_STEPS:
         st.session_state["submitted"] = attempt  # the tour logs in to show the response
     if not sign_in_card(login, attempt):
         return
     score = float(det.score(edited)[0])
-    response_screen(det.tier(score))
+    response_screen(det.tier(score), attempt)
     system_view(det, login, edited, score)
 
 
@@ -834,7 +838,9 @@ def _tour_go(step: int | None) -> None:
 
 
 def tour() -> None:
-    """The current tour step: dim the page except the highlighted part, and a box with Back / Next / Skip."""
+    """The current tour step: dim the page except the highlighted part, and a box with Back / Next / Skip.
+
+    The white backgrounds assume the light theme, which ``.streamlit/config.toml`` sets."""
     step = _tour_step()
     if step is None:
         return
@@ -843,13 +849,13 @@ def tour() -> None:
         f"""<style>
         .st-key-{current.target} {{
             position: relative; z-index: 1000; border-radius: 0.6rem;
-            background-color: var(--background-color, #ffffff);
-            box-shadow: 0 0 0 0.6rem var(--background-color, #ffffff),
+            background-color: #ffffff;
+            box-shadow: 0 0 0 0.6rem #ffffff,
                 0 0 0 calc(0.6rem + 4px) {ACCENT}, 0 0 0 200vmax rgba(20, 12, 32, 0.55);
         }}
         .st-key-tour-box {{
             position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 1001; width: min(26rem, 90vw);
-            padding: 1rem 1.2rem; border-radius: 0.8rem; background-color: var(--background-color, #ffffff);
+            padding: 1rem 1.2rem; border-radius: 0.8rem; background-color: #ffffff;
             box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.35); border-top: 4px solid {ACCENT};
         }}
         </style>""",
@@ -872,14 +878,14 @@ def tour() -> None:
             args=(None if last else step + 1,),
         )
         skip.button("Skip", key="tour-skip", on_click=_tour_go, args=(None,))
-    components.html(  # scroll the highlighted part into view (the page is in this frame's parent)
+    st.iframe(  # scroll the highlighted part into view (the page is in this frame's parent)
         f"""<script>
         try {{
             const target = window.parent.document.querySelector(".st-key-{current.target}");
             if (target) {{ target.scrollIntoView({{behavior: "smooth", block: "center"}}); }}
         }} catch (error) {{}}
         </script>""",
-        height=0,
+        height=1,  # invisible: it only runs the scroll
     )
 
 

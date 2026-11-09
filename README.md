@@ -82,8 +82,8 @@ ordinary login) and a scenario (a returning account or an account's first login)
 left side is the login attempt: every control is one input of the model, set to that login's value, with where
 takeovers and legitimate logins usually are. Press **Log in** to see the screen the person would see (let in,
 asked for a code, or held until they verify their identity) and what the system saw (the score, the thresholds
-and how the score is built); change the attempt and log in again. *Take the guided tour* walks through each part. `?example=<block|2fa|false-alarm|ordinary>&scenario=<returning|first>` in the URL opens a
-given scenario. Screenshots and details: [`notebooks/7-deploy/`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/7-deploy/README.md).
+and how the score is built); change the attempt and log in again. *Take the guided tour* walks through each part.
+`?example=<block|2fa|false-alarm|ordinary>&scenario=<returning|first>` in the URL opens a given scenario. Screenshots and details: [`notebooks/7-deploy/`](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/7-deploy/README.md).
 
 ![Demo: a takeover blocked](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/01-takeover-block.png)
 
