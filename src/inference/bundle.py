@@ -18,6 +18,8 @@ import hashlib
 import importlib.metadata
 import itertools
 import json
+import os
+import re
 import tempfile
 import urllib.parse
 import urllib.request
@@ -48,6 +50,8 @@ NUMBER_INPUTS = (  # the demo's sliders, in their order on the page
 )
 DOWNLOAD_TIMEOUT = 60  # seconds per file
 ALLOWED_SCHEMES = ("https", "file")  # file: for tests and local copies
+MAX_FILE_BYTES = 64 * 1024 * 1024  # the model is ~10 MB; anything far larger is not ours
+SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # file and release names: no paths, no hosts
 
 
 @dataclass
@@ -181,7 +185,10 @@ def build_bundle(
         load_side(config, data_dir, "test")
         .collect()
         .join(
-            pl.read_parquet(outputs / f"{dataset}_test_scores.parquet"), on="event_id", how="inner"
+            pl.read_parquet(outputs / f"{dataset}_test_scores.parquet"),
+            on="event_id",
+            how="inner",
+            maintain_order="left",  # the reference sample depends on the row order
         )
     )
     dev = (
@@ -232,7 +239,8 @@ PICKLE_LIBRARIES = (
 
 def manifest(files: Sequence[Path], base_url: str, release: str) -> dict[str, Any]:
     """The record committed to the repository: where the published files are, their SHA-256, and the library
-    versions the model file was saved with (the deployment must pin the same ones)."""
+    versions the model file was saved with (the deployment must pin the same ones). They are read from the
+    exporting environment, so export with the one the model was trained in."""
     return {
         "release": release,
         "base_url": base_url,
@@ -241,24 +249,45 @@ def manifest(files: Sequence[Path], base_url: str, release: str) -> dict[str, An
     }
 
 
-def fetch(record: Mapping[str, Any], cache: Path | None = None) -> Path:
-    """Download the files of a published bundle into a cache folder, checking each SHA-256 first.
+def _safe(name: object) -> str:
+    text = str(name)
+    if not SAFE_NAME.fullmatch(text) or text in {".", ".."}:
+        raise ValueError(f"unsafe name in the bundle record: {text!r}")
+    return text
 
-    A file already in the cache is used only if its SHA-256 still matches. A mismatch raises before the file
-    is ever loaded (the model file is a pickle, so it must never be loaded unverified).
+
+def _download(url: str, target: Path) -> None:
+    """Write ``url`` to ``target``, a new file (never follows or reuses an existing one)."""
+    if urllib.parse.urlparse(url).scheme not in ALLOWED_SCHEMES:
+        raise ValueError(f"refusing to download from {url}")
+    with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:  # noqa: S310 — scheme checked
+        data = response.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise ValueError(f"{url}: larger than {MAX_FILE_BYTES} bytes; not ours")
+    target.unlink(missing_ok=True)  # a stale partial file (unlink never follows a link)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    with os.fdopen(os.open(target, flags, 0o600), "wb") as handle:
+        handle.write(data)
+
+
+def fetch(record: Mapping[str, Any], cache: Path | None = None) -> Path:
+    """Download the files of a published bundle and check each SHA-256 before anything is loaded.
+
+    Without ``cache``, the files go to a new private folder (``tempfile.mkdtemp``: readable by this user only),
+    so no other user of the machine can swap a file between the check and the load; the model file is a
+    pickle, so it must never be loaded unverified. With ``cache`` (a folder the caller owns), a file already
+    there is reused only if its SHA-256 still matches. File and release names must be plain names.
     """
-    folder = (cache or Path(tempfile.gettempdir()) / "ato-demo") / str(record["release"])
+    release = _safe(record["release"])
+    folder = (cache / release) if cache else Path(tempfile.mkdtemp(prefix=f"ato-demo-{release}-"))
     folder.mkdir(parents=True, exist_ok=True)
-    for name, expected in record["files"].items():
+    for raw_name, expected in record["files"].items():
+        name = _safe(raw_name)
         target = folder / name
-        if target.exists() and sha256(target) == expected:
+        if target.is_file() and not target.is_symlink() and sha256(target) == expected:
             continue
-        url = urllib.parse.urljoin(str(record["base_url"]), urllib.parse.quote(name))
-        if urllib.parse.urlparse(url).scheme not in ALLOWED_SCHEMES:
-            raise ValueError(f"refusing to download from {url}")
-        partial = target.with_suffix(target.suffix + ".part")
-        with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:  # noqa: S310 — scheme checked
-            partial.write_bytes(response.read())
+        partial = folder / f"{name}.part"
+        _download(urllib.parse.urljoin(str(record["base_url"]), name), partial)
         if sha256(partial) != expected:
             partial.unlink()
             raise ValueError(f"{name}: SHA-256 does not match the repository's record; not loaded")
@@ -277,13 +306,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--release", required=True)
     parser.add_argument("--base-url", required=True)
+    parser.add_argument(
+        "--manifest", type=Path, required=True, help="where to write the record to commit"
+    )
     args = parser.parse_args(argv)
     bundle = build_bundle(args.data_dir, args.dataset, NUMBER_INPUTS, DEVICES)
     files = bundle.write(args.out)
     for suffix in ("joblib", "json"):
         source = args.data_dir / "06_models" / f"{args.dataset}_model.{suffix}"
         files.append(Path(shutil.copy2(source, args.out / source.name)))
-    print(json.dumps(manifest(files, args.base_url, args.release), indent=2))
+    record = json.dumps(manifest(files, args.base_url, args.release), indent=2) + "\n"
+    args.manifest.write_text(record)  # only after everything above succeeded
     return 0
 
 

@@ -4,6 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
@@ -32,6 +33,8 @@ def test_bundle_reads_back_what_was_written(data_dir: Path, bundle_dir: Path) ->
     assert read.usual == built.usual
     assert set(read.usual) == set(NUMBER_INPUTS)
     assert read.score_bins == built.score_bins
+    assert read.device_shares == built.device_shares
+    assert read.gap_hours == built.gap_hours
     picks = read.picks()
     assert set(picks) == set(read.counts), "a scenario for every kind of outcome"
     assert all(login.height == 1 for scenarios in picks.values() for login in scenarios.values())
@@ -47,21 +50,37 @@ def _app(monkeypatch: pytest.MonkeyPatch, **env: str) -> AppTest:
     return app
 
 
+def _pages(app: AppTest) -> dict[tuple[str, str], tuple[str, pd.DataFrame]]:
+    """Score and table of every kind of outcome and scenario the page offers."""
+    pages = {}
+    for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
+        app.button(key=key).click().run()
+        for scenario in app.radio[0].options:
+            app.radio[0].set_value(scenario).run()
+            assert not app.exception, app.exception
+            table: pd.DataFrame = app.table[0].value
+            pages[(key, str(scenario))] = (app.metric[0].value, table)
+    return pages
+
+
 def test_the_demo_runs_from_the_bundle_alone(
     data_dir: Path, bundle_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without the full data, the bundle gives the same page: same scenario, score and table."""
-    from_data = _app(monkeypatch, ATO_DATA_DIR=str(data_dir))
-    from_bundle = _app(
+    """Without the full data, the bundle gives the same page for every kind and scenario."""
+    from_data = _pages(_app(monkeypatch, ATO_DATA_DIR=str(data_dir)))
+    app = _app(
         monkeypatch,
         ATO_DATA_DIR=str(tmp_path),
         ATO_BUNDLE_DIR=str(bundle_dir),
         ATO_DEMO_OFFLINE="1",
     )
-    assert from_bundle.metric[0].value == from_data.metric[0].value
-    assert from_bundle.table[0].value.equals(from_data.table[0].value)
-    sliders = [s.key for s in from_bundle.select_slider if s.key != "in-gap"]
+    sliders = [s.key for s in app.select_slider if s.key != "in-gap"]
     assert sliders == [f"in-{c}" for c in NUMBER_INPUTS], "the export covers every number input"
+    from_bundle = _pages(app)
+    assert from_bundle.keys() == from_data.keys()
+    for page, (score, table) in from_data.items():
+        assert from_bundle[page][0] == score, page
+        assert from_bundle[page][1].equals(table), page
 
 
 def test_fetch_downloads_and_checks_every_file(bundle_dir: Path, tmp_path: Path) -> None:
@@ -81,6 +100,33 @@ def test_fetch_never_keeps_a_file_whose_sha256_differs(bundle_dir: Path, tmp_pat
     with pytest.raises(ValueError, match="SHA-256"):
         fetch(record, cache=tmp_path)
     assert not (tmp_path / "test" / "rba_model.joblib").exists(), "the model is never left to load"
+    assert not list((tmp_path / "test").glob("*.part")), "no partial file left behind"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), [("release", "../outside"), ("file", "../evil.txt"), ("file", "//host/x")]
+)
+def test_fetch_refuses_names_that_are_not_plain(tmp_path: Path, field: str, value: str) -> None:
+    record = {
+        "release": "ok",
+        "base_url": tmp_path.as_uri() + "/",
+        "files": {"summary.json": "0" * 64},
+    }
+    if field == "release":
+        record["release"] = value
+    else:
+        record["files"] = {value: "0" * 64}
+    with pytest.raises(ValueError, match="unsafe name"):
+        fetch(record, cache=tmp_path / "cache")
+
+
+def test_fetch_without_a_cache_uses_a_new_private_folder(bundle_dir: Path) -> None:
+    record = manifest(sorted(bundle_dir.iterdir()), bundle_dir.as_uri() + "/", "test")
+    first, second = fetch(record), fetch(record)
+    assert first != second, "a new folder each time"
+    assert first.stat().st_mode & 0o077 == 0, "readable by this user only"
+    shutil.rmtree(first)
+    shutil.rmtree(second)
 
 
 def test_fetch_refuses_plain_http(tmp_path: Path) -> None:

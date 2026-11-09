@@ -167,10 +167,14 @@ BUNDLE_RECORD = Path(__file__).with_name("bundle.json")  # the published demo bu
 
 
 def _published_bundle() -> Path:
-    """Download the published bundle (checked file by file against ``bundle.json``)."""
+    """Download the published bundle (checked file by file against ``bundle.json``). ``make demo`` sets
+    ``ATO_DEMO_OFFLINE``, so a local run never downloads anything."""
     if os.environ.get("ATO_DEMO_OFFLINE") or not BUNDLE_RECORD.exists():
         raise FileNotFoundError(2, "no data and no published bundle", str(DATA_DIR))
-    return fetch(json.loads(BUNDLE_RECORD.read_text()))
+    record = json.loads(BUNDLE_RECORD.read_text())
+    if not {f"{DATASET}_model.joblib", f"{DATASET}_model.json"} <= set(record["files"]):
+        raise ValueError(f"the published bundle has no model for dataset {DATASET!r}")
+    return fetch(record)
 
 
 @st.cache_resource
@@ -678,6 +682,14 @@ def main() -> None:
         st.error(
             f"Model or data not found ({missing.filename}). Run the pipeline and notebooks 06 and 07 "
             "first; see README."
+        )
+        st.stop()
+    except (
+        OSError,
+        ValueError,
+    ) as failure:  # the published bundle could not be downloaded or verified
+        st.error(
+            f"The demo's data could not be loaded ({type(failure).__name__}). Please try again later."
         )
         st.stop()
     if not picks:

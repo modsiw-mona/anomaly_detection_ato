@@ -27,7 +27,7 @@ split: ## Assign users to dev/test (grouped by user, stratified by label) (DATAS
 	PYTHONPATH=src uv run python -m data.split --dataset $(or $(DATASET),rba)
 
 demo: ## Run the Streamlit risk demo (needs the model from notebooks 06 and 07)
-	PYTHONPATH=src ATO_DATASET=$(or $(DATASET),rba) uv run streamlit run notebooks/7-deploy/app.py \
+	PYTHONPATH=src ATO_DATASET=$(or $(DATASET),rba) ATO_DEMO_OFFLINE=1 uv run streamlit run notebooks/7-deploy/app.py \
 		--server.address=127.0.0.1 --server.headless=true --browser.gatherUsageStats=false
 
 demo_bundle: ## Export the public demo bundle (RELEASE=demo-bundle-vN) and refresh notebooks/7-deploy/{bundle.json,requirements.txt}
@@ -35,7 +35,7 @@ demo_bundle: ## Export the public demo bundle (RELEASE=demo-bundle-vN) and refre
 	PYTHONPATH=src uv run python -m inference.bundle --dataset $(or $(DATASET),rba) \
 		--out data/08_reporting/demo_bundle --release $(RELEASE) \
 		--base-url https://github.com/modsiw-mona/anomaly_detection_ato/releases/download/$(RELEASE)/ \
-		> notebooks/7-deploy/bundle.json
+		--manifest notebooks/7-deploy/bundle.json
 	uv export --no-default-groups --no-emit-project --format requirements.txt \
 		-o notebooks/7-deploy/requirements.txt
 
