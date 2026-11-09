@@ -1,0 +1,61 @@
+[project]
+site_name = "Account-takeover detection"
+site_description = "Detecting account takeover from behavioural anomalies in authentication records: a master's thesis project."
+site_author = "Sofía Arango Patiño"
+site_url = "https://modsiw-mona.github.io/anomaly_detection_ato/"
+repo_url = "https://github.com/modsiw-mona/anomaly_detection_ato"
+repo_name = "modsiw-mona/anomaly_detection_ato"
+docs_dir = "docs"
+site_dir = "site"
+nav = [
+  { "Overview" = "index.md" },
+  { "Method" = "method.md" },
+  { "Results" = "results.md" },
+  { "Friction per user" = "friction.md" },
+  { "Demo" = "demo.md" },
+  { "Limitations" = "limitations.md" },
+  { "Reproduce" = "reproduce.md" },
+  { "Datasets" = [
+    { "Requirements and how to add one" = "datasets/README.md" },
+    { "RBA dataset card" = "datasets/rba.md" },
+  ] },
+]
+
+[project.theme]
+variant = "modern"
+features = [
+  "content.code.copy",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "search.highlight",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "deep-purple"
+accent = "deep-purple"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "deep-purple"
+accent = "deep-purple"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+tables = {}
+toc = { permalink = true }
+pymdownx.details = {}
+pymdownx.inlinehilite = {}
+pymdownx.highlight = { anchor_linenums = true, line_spans = "__span", pygments_lang_class = true }
+pymdownx.superfences = { custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+] }

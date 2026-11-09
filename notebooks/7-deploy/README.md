@@ -44,8 +44,8 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 - **The model's answer:** the takeover score, **what a score this high meant in the dataset** (for example "50 of
   the 103 development logins scoring 0.5 or more were takeovers", against about 1 in 70,000 overall), the
   **response** (allow, ask for 2FA, block) and the thresholds: the riskiest 1% of development logins (score
-  0.0033) are asked for 2FA and the riskiest 0.1% (0.0333) are blocked. These alert budgets were fixed in the
-  development plan before any model was trained, and turned into scores in issue #7 before the test set was
+  0.0033) are asked for 2FA and the riskiest 0.1% (0.0333) are blocked. These alert budgets were fixed before
+  any model was trained, and turned into scores in issue #7 before the test set was
   opened. The demo names the tiers of issue #7 in plain words: *block* for review / block and *ask for 2FA* for
   step-up authentication.
 - **How the score is built:** one row per control, in the order of the controls on the left (rows never jump),

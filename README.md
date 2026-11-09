@@ -8,6 +8,8 @@
 
 Repository for master's thesis project on **Account Take Over (ATO) detection** in authentication records using anomaly detection methodologies.
 
+**Documentation, method and results:** <https://modsiw-mona.github.io/anomaly_detection_ato/>
+
 ## Features and Tools
 
 Features                                     | Package  | Why?
@@ -117,6 +119,7 @@ uv add --group dev plotly
 │   ├── 07_model_output                 # scores
 │   └── 08_reporting                    # charts and metrics reports
 ├── docs                                # documentation site and dataset cards
+├── zensical.toml                       # documentation site configuration
 ├── notebooks                           # proof of concept, one folder per step (issues #1 to #8)
 ├── src
 │   ├── data                            # download, intermediate data, features, split, validation

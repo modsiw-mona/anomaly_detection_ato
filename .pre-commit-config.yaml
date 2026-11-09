@@ -3,7 +3,6 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-yaml
-        exclude: ^(mkdocs\.yml|{{cookiecutter.repo_name}}/mkdocs\.yml)$
       - id: check-case-conflict
       - id: debug-statements
       - id: detect-private-key

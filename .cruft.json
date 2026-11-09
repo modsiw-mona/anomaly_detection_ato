@@ -11,7 +11,7 @@
       "author_email": "sofiaarangopat@hotmail.com",
       "description": "Master's thesis project on Account Take Over (ATO) detection in authentication records using anomaly detection methodologies",
       "compatible_python_versions": "3.12",
-      "mkdocs": true,
+      "mkdocs": false,
       "codecov": true,
       "license": "MIT License",
       "_copy_without_render": [
