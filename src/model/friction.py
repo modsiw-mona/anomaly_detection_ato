@@ -59,8 +59,12 @@ def threshold_for_rate(positive_scores: FloatArray, rate: float) -> float:
 
 
 def _check(frame: pl.DataFrame, score: str) -> None:
-    if frame[score].null_count():
-        raise ValueError(f"{score} has nulls: drop the logins the score does not cover first")
+    if frame[score].null_count() or frame[score].is_nan().any():
+        raise ValueError(
+            f"{score} has nulls or NaN: drop the logins the score does not cover first"
+        )
+    if frame[LABEL].all():
+        raise ValueError("no legitimate logins: the per-user rate is undefined")
 
 
 def challenged_counts(
@@ -104,7 +108,11 @@ def user_friction(
     _check(frame, score)
     positives = frame.filter(pl.col(LABEL))[score].to_numpy()
     named = dict(thresholds or {})
-    named |= {f"detect {r:.1%}": threshold_for_rate(positives, r) for r in rates}
+    for r in rates:
+        name = f"detect {r:.1%}"
+        if name in named:
+            raise ValueError(f"two thresholds are both named {name!r}")
+        named[name] = threshold_for_rate(positives, r)
     logins, counts = challenged_counts(frame, list(named.values()), score=score)
     result: dict[str, Friction] = {}
     for j, (name, t) in enumerate(named.items()):
@@ -134,7 +142,8 @@ def bootstrap_friction(  # noqa: PLR0913 — the knobs of one bootstrap
     """Bootstrap interval of the mean rate and of the share of users ever asked, per detection rate.
 
     Every threshold a replicate can pick is one of the takeovers' scores, so the per-user counts are
-    computed once for each of them and each replicate only looks them up.
+    computed once for each of them and each replicate only looks them up. Every rate uses the
+    same resamples (the same seed), so its interval does not depend on the other rates asked for.
     """
     _check(frame, score)
     positives = frame.filter(pl.col(LABEL))[score].to_numpy()
@@ -143,10 +152,10 @@ def bootstrap_friction(  # noqa: PLR0913 — the knobs of one bootstrap
     per_user = counts / logins[:, None]
     mean_at = per_user.mean(axis=0)
     ever_at = (counts > 0).mean(axis=0)
-    rng = np.random.default_rng(seed)
     tail = (1 - level) / 2
     rows = []
     for rate in rates:
+        rng = np.random.default_rng(seed)
         picks = np.array(
             [
                 np.searchsorted(

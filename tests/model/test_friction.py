@@ -58,9 +58,43 @@ def test_friction_at_a_fixed_threshold_and_at_a_detection_rate() -> None:
     assert rate["ever"] == pytest.approx(1 / 3), "only user c scores above 0.92"
 
 
-def test_detecting_every_takeover_can_cost_more_friction() -> None:
-    result = user_friction(_toy(), rates=(0.5, 1.0))
-    assert result["detect 100.0%"]["mean"] >= result["detect 50.0%"]["mean"]
+def test_a_login_scoring_exactly_the_threshold_is_challenged() -> None:
+    frame = pl.DataFrame(
+        {"user_id": ["a", "a", "x"], "label_ato": [False, False, True], "score": [0.5, 0.1, 0.5]}
+    )
+    result = user_friction(frame, rates=(1.0,))["detect 100.0%"]
+    assert result["threshold"] == pytest.approx(0.5)
+    assert result["mean"] == pytest.approx(HALF), "the tie at 0.5 counts as asked"
+
+
+def test_bootstrap_looks_up_the_right_threshold() -> None:
+    """Two takeovers, detect both: a replicate's threshold is the lower score (0.4) unless both draws
+    are the higher one (1 in 4). A central interval (30th to 70th percentile) then holds only the
+    friction at 0.4, whose value differs from the friction at 0.8."""
+    frame = pl.DataFrame(
+        {
+            "user_id": ["a", "a", "b", "c", "c", "x", "y"],
+            "label_ato": [False, False, False, False, False, True, True],
+            "score": [0.9, 0.1, 0.5, 0.65, 0.2, 0.8, 0.4],
+        }
+    )
+    direct = user_friction(frame, thresholds={"high": 0.8, "low": 0.4}, rates=())
+    assert direct["low"]["mean"] != pytest.approx(direct["high"]["mean"])
+    row = bootstrap_friction(frame, rates=(1.0,), n_boot=400, level=0.4).row(0, named=True)
+    for end in ("mean low", "mean high"):
+        assert row[end] == pytest.approx(direct["low"]["mean"]), end
+    for end in ("ever low", "ever high"):
+        assert row[end] == pytest.approx(direct["low"]["ever"]), end
+
+
+def test_bad_inputs_are_rejected() -> None:
+    with pytest.raises(ValueError, match="NaN"):
+        user_friction(_toy().with_columns(pl.when(pl.col("user_id") == "b").then(float("nan"))
+                                          .otherwise(pl.col("score")).alias("score")))  # fmt: skip
+    with pytest.raises(ValueError, match="no legitimate"):
+        user_friction(_toy().filter(pl.col("label_ato")))
+    with pytest.raises(ValueError, match="both named"):
+        user_friction(_toy(), thresholds={"detect 50.0%": 0.3}, rates=(0.5,))
 
 
 def test_null_scores_are_rejected() -> None:
