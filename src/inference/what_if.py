@@ -25,10 +25,8 @@ same thing as a new country, so the travel switch follows "New country".
 
 On a first login the account-history signals do not exist, so no rule applies to them.
 
-A *where from* switch replaces a group of inputs with those of one real login on the other side of its threshold
-(one login, so the relations between its values hold): the one most similar to the login being changed on the
-inputs the viewer did not change (:func:`nearest_row`), so a switch changes what it names and as little else as
-the data allows.
+* **Network seen before.** A network nobody had logged in from (share of all earlier logins 0) had no accounts
+  either, and one seen before had at least one account and a known attack history (:data:`NEVER_SEEN_NETWORK`).
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -94,10 +92,7 @@ NEW_IF_MOVED = {  # where-from groups and the account-novelty signal of the valu
 
 Required = dict[str, tuple[bool, str]]
 Values = dict[str, Any]
-NULL_MISMATCH = (
-    100.0  # distance between a missing value (e.g. an IP never seen before) and a present one
-)
-SHARE_FLOOR = 1e-7  # added before taking the log of a share of all logins, which can be zero
+NEVER_SEEN_NETWORK = "Nobody had logged in from this network before (0%), so no account had either."
 
 
 def gap_of(hours: float | None) -> str | None:
@@ -208,47 +203,3 @@ def typical_row(frame: pl.DataFrame, by: str, columns: Sequence[str]) -> Values:
         return {}
     ordered = frame.sort(pl.col(by), pl.col("event_id").hash(seed=0), nulls_last=True)
     return ordered.select(columns).row((ordered.height - 1) // 2, named=True)
-
-
-def _scaled(column: str) -> pl.Expr:
-    """A column on the scale its differences are judged on: log for shares of all logins and for counts."""
-    value = pl.col(column).cast(pl.Float64)
-    if column.startswith("global_share_"):
-        return (value + SHARE_FLOOR).log10()
-    if column.endswith(("_prior_users", "_prev24h")):
-        return value.log1p()
-    return value  # shares of a network's or IP's own attempts, already between 0 and 1
-
-
-def nearest_row(
-    frame: pl.DataFrame,
-    login: pl.DataFrame,
-    keep: Sequence[str],
-    columns: Sequence[str],
-    by: str,
-) -> Values:
-    """The ``columns`` of the login in ``frame`` most similar to ``login`` on the ``keep`` columns.
-
-    Each ``keep`` column counts its squared difference in standard deviations of ``frame`` (on the log scale
-    for shares of all logins and for counts); a value missing on one side only counts as far apart. Ties:
-    fixed pseudo-random order. Without ``keep`` columns it is the typical login of ``frame`` (:func:`typical_row`).
-    """
-    if frame.is_empty() or not keep:
-        return typical_row(frame, by, columns)
-    terms = []
-    for column in keep:
-        scaled = _scaled(column)
-        value = login.select(scaled).item()
-        if value is None:
-            terms.append(pl.when(scaled.is_null()).then(0.0).otherwise(NULL_MISMATCH))
-            continue
-        spread = (
-            frame.select(scaled.std()).item() or 1.0
-        )  # no spread (or one login): plain difference
-        terms.append(
-            pl.when(scaled.is_null())
-            .then(NULL_MISMATCH)
-            .otherwise(((scaled - value) / spread) ** 2)
-        )
-    ordered = frame.sort(pl.sum_horizontal(terms), pl.col("event_id").hash(seed=0))
-    return ordered.select(columns).row(0, named=True)

@@ -1,4 +1,4 @@
-"""Account-takeover risk demo (issue #8): pick a scenario, play with its signals, see the response.
+"""Account-takeover risk demo (issue #8): pick a real login, change its inputs, see the model's answer.
 
 Run from the repository root (after ``make data intermediate features split`` and notebooks 06 and 07):
 
@@ -10,21 +10,20 @@ alarm, ordinary login) the demo offers a returning account and an account's firs
 login of its group. The response tiers of issue #7 are shown as *block* (review / block) and *ask for 2FA*
 (step-up authentication: a second factor).
 
-Every signal is a control set to the scenario's real value. *Where the login comes from* switches move a
-group of inputs at once: switching one replaces that group with the inputs of one real test login on the other
-side of the threshold, the one most similar to the scenario's login on the inputs the viewer did not change
-(``inference.what_if.nearest_row``), so the relations between them hold and nothing else moves more than
-needed. *Compared with the account's earlier logins* controls are the time since the previous login and the
-account-novelty flags. Rules between signals (``inference.what_if``) fix the signals that must follow from the
-others; those are greyed out with the reason.
+Every control is one model input, set to the real login's value: yes/no inputs are switches and number inputs
+are sliders over plain steps (the real value included), each with where takeovers and legitimate logins usually
+are. The model re-scores exactly the inputs shown; nothing is taken from another login. Strict relations of the
+data (``inference.what_if``) grey out the inputs that follow from others, with the reason. The table on the
+right shows how the score is built: tree-SHAP contributions per control, in the order of the controls, adding up
+from a typical ordinary login's score to this one's.
 """
 
 import copy
+import itertools
 import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
 
 import pandas as pd
 import polars as pl
@@ -42,11 +41,9 @@ from inference.predict import ALLOW, NEVER_SEEN_PREFIX, Detector  # noqa: E402
 from inference.what_if import (  # noqa: E402
     GAPS,
     HISTORY_SIGNALS,
-    NETWORK_SIGNALS,
+    NEVER_SEEN_NETWORK,
     SIGNALS,
-    Values,
     gap_of,
-    nearest_row,
     required_signals,
     typical_row,
     unknown,
@@ -55,128 +52,122 @@ from inference.what_if import (  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("ATO_DATA_DIR", REPO_ROOT / "data"))
 DATASET = os.environ.get("ATO_DATASET", "rba")
+THESIS_EN = (
+    "Account takeover (ATO) detection through automatic identification of behavioural anomalies in "
+    "authentication records"
+)
+THESIS_ES = (
+    "Detección de Account Takeover (ATO) mediante identificación automática de anomalías comportamentales "
+    "en registros de autenticación"
+)
 TIER_STYLE = {"review / block": "error", "step-up": "warning", ALLOW: "success"}
 RESPONSE = {"review / block": "block", "step-up": "ask for 2FA (a second factor)", ALLOW: "allow"}
-
-
-@dataclass(frozen=True)
-class Context:
-    """A switch over a group of inputs, on when ``condition`` holds for the login."""
-
-    text: str
-    columns: tuple[str, ...]
-    condition: pl.Expr
-
-
-CONTEXT = {  # thresholds sit between dev takeovers and dev legitimate logins (notebook 07 / EDA)
-    "rare_network": Context(
-        "Rare network (ASN): under 0.1% of all earlier logins",
-        ("global_share_asn", "global_share_ip", "asn_prior_users", "ip_prior_users"),
-        pl.col("global_share_asn") < 0.001,  # noqa: PLR2004
+SHORT = {"review / block": "block", "step-up": "ask for 2FA", ALLOW: "allow"}  # in the table
+KINDS = {  # stable URL slug -> button label, and what the kind means
+    "block": ("Takeover → block", "A real takeover the model scores high enough to block."),
+    "2fa": (
+        "Takeover → ask for 2FA",
+        "A real takeover the model catches by asking for a second factor.",
     ),
-    "quiet_network": Context(
-        "Network barely active in the previous 24 hours (under 50 attempts)",
-        ("asn_attempts_prev24h", "asn_fails_prev24h"),
-        pl.col("asn_attempts_prev24h") < 50,  # noqa: PLR2004
+    "missed": ("Takeover the model misses", "A real takeover the model lets through."),
+    "false-alarm": (
+        "Legitimate login flagged (false alarm)",
+        "A real user's login the model asks for 2FA by mistake.",
     ),
-    "attack_network": Context(
-        "Most of the network's earlier attempts came from attack IPs",
-        (
-            "asn_prior_attack_share",
-            "asn_prior_fail_share",
-            "ip_prior_attack_share",
-            "ip_prior_fail_share",
-        ),
-        pl.col("asn_prior_attack_share") >= 0.5,  # noqa: PLR2004
-    ),
-    "rare_country": Context(
-        "Rare country: under 1% of all earlier logins",
-        ("global_share_country", "country"),  # the country is shown, not a model input
-        pl.col("global_share_country") < 0.01,  # noqa: PLR2004
-    ),
-    "rare_browser": Context(
-        "Rare browser: under 0.1% of all earlier logins",
-        (
-            "global_share_browser",
-            "global_share_os",
-            "global_share_user_agent",
-            "user_agent_prior_users",
-        ),
-        pl.col("global_share_browser") < 0.001,  # noqa: PLR2004
+    "ordinary": (
+        "Ordinary legitimate login",
+        "A real user's login the model lets through, as it should.",
     ),
 }
-NETWORK = ("rare_network", "quiet_network", "attack_network")  # one network: moved together
-DEVICE = "device_type"
-DEVICES = ("desktop", "mobile", "tablet")
-GAP = "gap"
-CLIENT = "rare_browser"  # moved together with the device type
+SCENARIOS = {"returning": "Returning account", "first": "First login of a new account"}
 ASN = (
     "ASN (autonomous system number): the number that identifies a network on the internet, such as an "
     "internet provider's, a company's or a cloud host's."
 )
-DEFINITIONS = {  # shown on hover, only where the switch's name uses a technical term
-    "rare_network": f"Less than 0.1% of all earlier logins came from this network. {ASN}",
-    "attack_network": "At least half of the earlier attempts from this network came from IP addresses on "
-    "the dataset's list of addresses used in credential attacks (such as password guessing).",
-    "rare_country": "Less than 1% of all earlier logins came from this country.",
-    "rare_browser": "Less than 0.1% of all earlier logins used this browser version.",
-    DEVICE: "In this data, desktop logins were about 10 times more often takeovers than mobile ones.",
-    "attack_ip": "The dataset's list of IP addresses used in credential attacks (such as password guessing).",
+ATTACK = (
+    "Attack IPs: the dataset's list of IP addresses used in credential attacks (such as password "
+    "guessing)."
+)
+DEVICE, DEVICES, GAP = "device_type", ("desktop", "mobile", "tablet"), "gap"
+
+
+@dataclass(frozen=True)
+class Slider:
+    """A number input of the model, set on plain steps."""
+
+    label: str
+    steps: tuple[float, ...]
+    share: bool  # shown as a percentage
+    help: str
+    group: str = "network"  # the where-from group it belongs to (see ``inference.what_if``)
+
+
+SLIDERS = {
+    "global_share_asn": Slider(
+        "How common the network is: share of all earlier logins from it",
+        (0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.05, 0.13, 0.3),
+        share=True,
+        help=f"{ASN} A big home or mobile internet provider carries a large share of all logins; a "
+        "small hosting company or VPN network, almost none. 0% means nobody had logged in from it before.",
+    ),
+    "asn_prior_users": Slider(
+        "Different accounts that had logged in from this network",
+        (0, 5, 20, 100, 1_000, 10_000, 100_000, 500_000),
+        share=False,
+        help="How many different user accounts had already logged in successfully from this network "
+        "before this login. A big internet provider has hundreds of thousands; a network that only a "
+        "handful of accounts ever used is unusual.",
+    ),
+    "asn_attempts_prev24h": Slider(
+        "Login attempts from this network in the 24 hours before",
+        (0, 5, 50, 500, 5_000, 20_000, 100_000),
+        share=False,
+        help="All login attempts from this network, by any account, successful or failed, in the 24 "
+        "hours before this login. Busy providers have thousands a day; a quiet network, almost none.",
+    ),
+    "asn_prior_attack_share": Slider(
+        "Share of the network's earlier attempts that came from attack IPs",
+        (0, 0.01, 0.1, 0.25, 0.5, 0.75, 1.0),
+        share=True,
+        help=f"{ATTACK} Of all earlier login attempts from this network, the share made from those "
+        "addresses.",
+    ),
+    "global_share_country": Slider(
+        "How common the country is: share of all earlier logins from it",
+        (0, 1e-5, 1e-4, 1e-3, 1e-2, 0.05, 0.2, 0.65),
+        share=True,
+        help="Most logins to this service come from a few countries; a country with a tiny share is "
+        "unusual for the service as a whole (not only for this account).",
+        group="country",
+    ),
+    "global_share_browser": Slider(
+        "How common the browser version is: share of all earlier logins with it",
+        (0, 1e-5, 1e-4, 1e-3, 1e-2, 0.05, 0.2),
+        share=True,
+        help="The browser and its exact version (for example Chrome 87). Current versions of popular "
+        "browsers are common; old or unusual versions are rare.",
+        group="browser",
+    ),
+}
+DEFINITIONS = {  # hover text, only where a name uses a technical term
+    "attack_ip": ATTACK,
     "new_asn": f"The account had never logged in from this network. {ASN}",
     "new_user_agent": "User agent: the text a browser sends to identify itself (browser and version, "
     "operating system, device). The account had never sent this exact one.",
-    "country_change_1h": "Also called impossible travel: a jump between countries a person can hardly make.",
+    "country_change_1h": "Also called impossible travel: a jump between countries a person can hardly "
+    "make.",
+    DEVICE: "In this data, desktop logins were about 10 times more often takeovers than mobile ones.",
 }
 KEY_NOVELTY = ("new_country", "new_asn", "new_device_type", "new_os", "new_browser")
-MIN_SCORE_CHANGE = 5e-5  # below this the 4-decimal score does not move
-
-LABELS = {  # plain-language names for the inputs shown on screen
-    "country": "Country",
-    "device_type": "Device type",
-    "first_success": "First successful login of this account",
-    "prior_successes": "Earlier successful logins of this account",
-    "hours_since_prev_success": "Hours since the account's previous login",
-    "global_share_country": "Share of all earlier logins from this country",
-    "global_share_asn": "Share of all earlier logins from this network (ASN)",
-    "global_share_ip": "Share of all earlier logins from this IP",
-    "global_share_browser": "Share of all earlier logins with this browser",
-    "global_share_os": "Share of all earlier logins with this OS",
-    "global_share_device_type": "Share of all earlier logins with this device type",
-    "global_share_user_agent": "Share of all earlier logins with this exact user agent",
-    "asn_prior_attack_share": "Share of this network's earlier attempts from attack IPs",
-    "asn_prior_fail_share": "Share of this network's earlier attempts that failed",
-    "ip_prior_attack_share": "Share of this IP's earlier attempts from attack IPs",
-    "ip_prior_fail_share": "Share of this IP's earlier attempts that failed",
-    "asn_attempts_prev24h": "Attempts from this network in the previous 24 hours",
-    "asn_fails_prev24h": "Failed attempts from this network in the previous 24 hours",
-    "asn_prior_users": "Accounts seen on this network before",
-    "ip_prior_users": "Accounts seen on this IP before",
-    "user_agent_prior_users": "Accounts seen with this exact user agent before",
-    "user_prior_countries": "Countries this account used before",
-    "n_new_key_signals": "Number of new key signals at once",
-    "fails_1h": "Failed attempts on this account in the previous hour",
-    "fails_24h": "Failed attempts on this account in the previous 24 hours",
-    "region_missing": "Region unknown",
-    "city_missing": "City unknown",
-    **{
-        c: f"{text} for this account" for c, text in HISTORY_SIGNALS.items() if c.startswith("new_")
-    },
-    "country_change_1h": HISTORY_SIGNALS["country_change_1h"],
-    **NETWORK_SIGNALS,
-}
-ENCODED = {"device_type_": "Device type is ", "hour_": "Hour of day", "weekday_": "Day of week"}
-
-KINDS = {  # stable URL slug -> button label
-    "block": "Takeover → block",
-    "2fa": "Takeover → ask for 2FA",
-    "missed": "Takeover the model misses",
-    "false-alarm": "Legitimate login flagged (false alarm)",
-    "ordinary": "Ordinary legitimate login",
-}
-SCENARIOS = {"returning": "Returning account", "first": "First login of a new account"}
-
+OTHER = "Other inputs (kept as in the real login)"
+START = "Typical ordinary login (starting point)"
 REFERENCE_SIZE = 300  # ordinary logins that define "typical" for the explanations
-MIN_EFFECT = 1e-4  # contributions smaller than this are not shown
+MIN_SCORE_CHANGE = 5e-5  # below this the 4-decimal score does not move
+MIN_EFFECT = 1e-4  # contributions smaller than this read as no effect
+SMALL_SHARE, LARGE_SHARE = 0.01, 0.1  # percentage formats: two significant digits below 1%
+
+
+# ---------- data and model ---------------------------------------------------------------------------
 
 
 @st.cache_resource
@@ -192,12 +183,18 @@ def test_logins() -> pl.DataFrame:
     return load_side(config, DATA_DIR, "test").collect().join(scores, on="event_id", how="inner")
 
 
+@st.cache_data
+def dev_logins() -> pl.DataFrame:
+    """Development-side logins: the number inputs, the label and the out-of-fold score (issue #6)."""
+    config = load_dataset_config(DATASET)
+    scores = pl.read_parquet(DATA_DIR / "07_model_output" / f"{DATASET}_dev_oof.parquet")
+    dev = load_side(config, DATA_DIR, "dev").select("event_id", "label_ato", *SLIDERS).collect()
+    return dev.join(scores, on="event_id", how="inner")
+
+
 @st.cache_resource
 def explained_detector() -> Detector:
-    """The detector, explaining relative to a fixed sample of ordinary (allowed, legitimate) test logins.
-
-    The sample comes from the test side, which issue #7 already evaluated; it only sets what "typical" means.
-    """
+    """The detector, explaining relative to a fixed sample of ordinary (allowed, legitimate) test logins."""
     det = copy.copy(detector())  # keep the shared cached detector unchanged
     logins = test_logins()
     ordinary = logins.filter(~pl.col("label_ato") & (pl.col("score") < det.thresholds["step-up"]))
@@ -205,98 +202,58 @@ def explained_detector() -> Detector:
     return det
 
 
-def context_state(login: pl.DataFrame, name: str) -> bool:
-    """Whether a *where the login comes from* switch is on for this login (a missing value: off)."""
-    return bool(login.select(CONTEXT[name].condition.fill_null(False)).item())
-
-
-def _on(name: str, state: bool) -> pl.Expr:
-    condition = CONTEXT[name].condition.fill_null(False)
-    return condition if state else ~condition
-
-
-def _columns(logins: pl.DataFrame, *names: str) -> list[str]:
-    return [c for n in names for c in CONTEXT[n].columns if c in logins.columns]
-
-
-class Typical(TypedDict):
-    """Inputs of typical test logins for each position of the switches (a plain dict, so it can be cached)."""
-
-    others: dict[str, dict[bool, Values]]
-    gap: dict[str, float | None]
+def _median(frame: pl.DataFrame, column: str) -> float | None:
+    value = frame[column].median()
+    return float(value) if isinstance(value, int | float) else None
 
 
 @st.cache_data
-def typical_values() -> Typical:
-    """The country inputs of a typical real test login on each side of its threshold, and a typical time gap.
+def usual_values() -> dict[str, tuple[float | None, float | None]]:
+    """Median of each number input among development takeovers and legitimate logins."""
+    dev = dev_logins()
+    ato, legit = dev.filter(pl.col("label_ato")), dev.filter(~pl.col("label_ato"))
+    return {c: (_median(ato, c), _median(legit, c)) for c in SLIDERS}
 
-    The country switch is the only input of its group, so there is nothing to keep similar.
-    """
+
+@st.cache_data
+def device_shares() -> dict[str, float]:
+    """The typical share of all earlier logins of each device type (moves with the device type)."""
     logins = test_logins()
-    others = {
-        name: {
-            state: typical_row(
-                logins.filter(_on(name, state)), CONTEXT[name].columns[0], _columns(logins, name)
-            )
-            for state in (True, False)
-        }
-        for name in CONTEXT
-        if name not in (*NETWORK, CLIENT)
-    }
-    hours, lower, gap = pl.col("hours_since_prev_success"), 0.0, {}
+    shares = {}
+    for device in DEVICES:
+        value = _median(logins.filter(pl.col(DEVICE) == device), "global_share_device_type")
+        if value is not None:
+            shares[device] = value
+    return shares
+
+
+@st.cache_data
+def score_bins() -> list[tuple[float, float, int, int]]:
+    """Development logins by score range: (low, high, logins, takeovers), the tiers split further."""
+    det, dev = detector(), dev_logins()
+    edges = [0.0, det.thresholds["step-up"], det.thresholds["review / block"], 0.2, 0.5, 1.000001]
+    bins = []
+    for low, high in itertools.pairwise(edges):
+        part = dev.filter((pl.col("score") >= low) & (pl.col("score") < high))
+        bins.append((low, high, part.height, int(part["label_ato"].sum())))
+    return bins
+
+
+@st.cache_data
+def typical_gap_hours() -> dict[str, float | None]:
+    """Hours since the previous login of a typical test login in each time range."""
+    logins, hours, lower, out = test_logins(), pl.col("hours_since_prev_success"), 0.0, {}
     for name, upper in GAPS.items():
         within = logins.filter((hours >= lower) & (hours < upper))
-        gap[name] = typical_row(
+        out[name] = typical_row(
             within, "hours_since_prev_success", ["hours_since_prev_success"]
         ).get("hours_since_prev_success")
         lower = upper
-    return Typical(others=others, gap=gap)
-
-
-def _scenario_login(logins: pl.DataFrame, event_id: int) -> pl.DataFrame:
-    return logins.filter(pl.col("event_id") == event_id)
-
-
-@st.cache_data
-def network_donor(event_id: int, wanted: tuple[bool, ...]) -> Values:
-    """Network inputs for the network switches in position ``wanted``.
-
-    The three switches describe one network, so the inputs come from one real test login matching all three
-    (every combination occurs in the test data): the one most similar to the scenario's login on the inputs of
-    the switches the viewer left as they were.
-    """
-    logins = test_logins()
-    login = _scenario_login(logins, event_id)
-    real = tuple(context_state(login, n) for n in NETWORK)
-    kept = [n for n, w, r in zip(NETWORK, wanted, real, strict=True) if w == r]
-    pool = logins.filter(*(_on(n, w) for n, w in zip(NETWORK, wanted, strict=True)))
-    return nearest_row(
-        pool, login, _columns(logins, *kept), _columns(logins, *NETWORK), by="global_share_asn"
-    )
-
-
-@st.cache_data
-def client_donor(event_id: int, device: str, rare: bool) -> Values:
-    """Device and browser inputs from one real test login with this device type and browser rarity.
-
-    Device type and browser describe one client. When only the device type changed, the login is the one
-    whose browser is most like the scenario's.
-    """
-    logins = test_logins()
-    login = _scenario_login(logins, event_id)
-    kept = [CLIENT] if rare == context_state(login, CLIENT) else []
-    pool = logins.filter((pl.col(DEVICE) == device) & _on(CLIENT, rare))
-    return nearest_row(
-        pool,
-        login,
-        _columns(logins, *kept),
-        ["global_share_device_type", *_columns(logins, CLIENT)],
-        by="global_share_browser",
-    )
+    return out
 
 
 def kinds(logins: pl.DataFrame, det: Detector) -> dict[str, pl.DataFrame]:
-    """Test-side logins grouped by ground truth and response tier, keyed by slug (empty groups left out)."""
+    """Test-side logins grouped by ground truth and response tier, keyed by slug (empty ones left out)."""
     score, takeover = pl.col("score"), pl.col("label_ato")
     block, step_up = det.thresholds["review / block"], det.thresholds["step-up"]
     groups = {
@@ -310,7 +267,7 @@ def kinds(logins: pl.DataFrame, det: Detector) -> dict[str, pl.DataFrame]:
 
 
 def representative(pool: pl.DataFrame) -> dict[str, pl.DataFrame]:
-    """The median-score returning-account login and first login of a group (ties: fixed pseudo-random order)."""
+    """The median-score returning-account login and first login of a group (ties: fixed order)."""
     first = pl.col("prior_successes") == 0
     picks = {}
     for name, frame in (("returning", pool.filter(~first)), ("first", pool.filter(first))):
@@ -331,8 +288,33 @@ def scenarios() -> tuple[dict[str, int], dict[str, dict[str, pl.DataFrame]]]:
     )
 
 
+# ---------- formatting -------------------------------------------------------------------------------
+
+
+def fmt(column: str, value: object) -> str:
+    """An input value for people: shares as percentages, switches as on/off."""
+    if value is None:
+        return "no earlier attempts" if column == "asn_prior_attack_share" else "—"
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    if column in SLIDERS and SLIDERS[column].share and isinstance(value, int | float):
+        return _percent(column, float(value))
+    if isinstance(value, int | float):
+        return f"{value:,.0f}"
+    return str(value)
+
+
+def _percent(column: str, share: float) -> str:
+    """A share as a percentage; small shares keep two significant digits so they never read as 0."""
+    if share == 0:
+        return "0% (never seen)" if column.startswith("global_share_") else "0%"
+    if share < SMALL_SHARE:
+        return f"{share * 100:.2g}%"
+    return f"{share:.0%}" if share >= LARGE_SHARE else f"{share:.1%}"
+
+
 def _key(name: str) -> str:
-    return f"signal-{name}"
+    return f"in-{name}"
 
 
 def _real(login: pl.DataFrame, column: str) -> bool:
@@ -340,17 +322,38 @@ def _real(login: pl.DataFrame, column: str) -> bool:
     return bool(value) if value is not None else False
 
 
-def load_signals(login: pl.DataFrame) -> None:
+# ---------- choosing a login -------------------------------------------------------------------------
+
+
+def introduction() -> None:
+    st.markdown(
+        f"This demo accompanies the master's thesis *{THESIS_EN}* (*{THESIS_ES}*). A machine-learning "
+        "model gives each successful login a **takeover score** and a **response**: allow it, ask for a "
+        "second factor (2FA), or block it. The logins are real records of a public synthetic dataset (RBA "
+        "dataset, Wiefling et al. 2022), from users the model never saw in training."
+    )
+    st.markdown(
+        "**How to use it**\n"
+        "1. **Choose one of the kinds of authentication records** below. Each one is a real login.\n"
+        "2. **Choose a scenario:** an account that had logged in before, or an account's first login.\n"
+        "3. **Change the login's inputs** on the left. The model re-scores the login with exactly those "
+        "values; the right side shows the new score, the response and how the score is built. "
+        "**Back to the real login** undoes your changes."
+    )
+
+
+def load_inputs(login: pl.DataFrame) -> None:
     """Set every control to the login's real values."""
     state = st.session_state
-    for name in CONTEXT:
-        state[_key(name)] = context_state(login, name)
+    for column in SLIDERS:
+        state[_key(column)] = login[column][0]
     for column in SIGNALS:
         if column in login.columns:
             state[_key(column)] = _real(login, column)
     state[_key(DEVICE)] = login[DEVICE][0]
     state[_key(GAP)] = gap_of(login["hours_since_prev_success"][0])
-    state["forced"] = {}  # signal -> the value the viewer had given it before a rule fixed it
+    state["forced"] = {}  # switch -> the value the viewer had given it before a rule fixed it
+    state["held"] = {}  # slider -> the value the viewer had given it before a rule fixed it
     state["loaded"] = int(login["event_id"][0])
 
 
@@ -359,21 +362,18 @@ def pick_scenario(
 ) -> pl.DataFrame:
     """Top of the page: one button per kind of outcome, then its scenarios; returns the chosen login."""
     slugs = list(picks)
-    if (
-        st.session_state.get("kind") not in slugs
-    ):  # ?example=<slug>&scenario=<name> opens one directly
+    if st.session_state.get("kind") not in slugs:  # ?example=<slug>&scenario=<name> opens one
         wanted = st.query_params.get("example", slugs[0])
         st.session_state["kind"] = wanted if wanted in slugs else slugs[0]
     for column, slug in zip(st.columns(len(slugs)), slugs, strict=True):
         chosen = slug == st.session_state["kind"]
+        name, text = KINDS[slug]
         if column.button(
-            KINDS[slug],
-            key=f"kind-{slug}",
-            type="primary" if chosen else "secondary",
-            width="stretch",
+            name, key=f"kind-{slug}", type="primary" if chosen else "secondary", width="stretch"
         ):
             st.session_state["kind"] = slug
             st.rerun()
+        column.caption(text)
     kind = st.session_state["kind"]
     options = list(picks[kind])
     requested = st.query_params.get("scenario")
@@ -385,84 +385,98 @@ def pick_scenario(
         horizontal=True,
         key=f"scenario-{kind}",
     )
-    st.query_params.update({"example": kind, "scenario": scenario})  # the URL reopens this scenario
+    st.query_params.update({"example": kind, "scenario": scenario})  # the URL reopens it
     login = picks[kind][scenario]
-    st.caption(
-        f"A real test login, the typical (median-score) one of its scenario; {counts[kind]:,} test logins "
-        f"of this kind in all. {describe(login)}"
-    )
+    st.caption(describe(login, counts[kind]))
     return login
 
 
-def describe(login: pl.DataFrame) -> str:
+def describe(login: pl.DataFrame, count: int) -> str:
     """One line about the scenario's real login."""
     prior = int(login["prior_successes"][0])
     if prior == 0:
         account = "the account's first successful login"
     else:
-        account = f"{prior:,} earlier login{'s' if prior > 1 else ''}"
+        account = f"{prior:,} earlier login{'s' if prior > 1 else ''} of this account"
     truth = "**takeover**" if login["label_ato"][0] else "**legitimate**"
     return (
-        f"{account[0].upper()}{account[1:]}, from {login['country'][0]} on {login['device_type'][0]}, "
-        f"{login['timestamp'][0]:%Y-%m-%d %H:%M}. Ground truth: {truth}."
+        f"**The login:** {account}, from {login['country'][0]} on a {login[DEVICE][0]}, "
+        f"{login['timestamp'][0]:%Y-%m-%d}. Ground truth: {truth}. It is the typical (median-score) "
+        f"one of the {count:,} test logins of this kind."
     )
 
 
-def label(column: str) -> str:
-    """Plain-language name of an input; never-seen indicators and encodings read from their source."""
-    if column.startswith(NEVER_SEEN_PREFIX):
-        source = column.removeprefix(NEVER_SEEN_PREFIX)
-        return f"{source.split('_', 1)[0].upper()} never seen before (for: {LABELS.get(source, source)})"
-    for prefix, text in ENCODED.items():
-        if column.startswith(prefix) and column not in LABELS:
-            return f"{text}{column.removeprefix(prefix)}" if text.endswith(" ") else text
-    return LABELS.get(column, column)
+# ---------- the inputs -------------------------------------------------------------------------------
 
 
-def locate(login: pl.DataFrame) -> pl.DataFrame:
-    """The login with the *where the login comes from* controls applied (network, country, browser, device)."""
+def network_rules(login: pl.DataFrame) -> None:
+    """Keep the network inputs to combinations the data has (see ``inference.what_if``)."""
     state = st.session_state
-    event_id = int(login["event_id"][0])
-    located = login.clone()
-    wanted = tuple(bool(state[_key(n)]) for n in NETWORK)
-    if wanted != tuple(context_state(login, n) for n in NETWORK):
-        located = _with_values(located, network_donor(event_id, wanted))
-    for name, values in typical_values()["others"].items():
-        if bool(state[_key(name)]) != context_state(login, name):
-            located = _with_values(located, values[bool(state[_key(name)])])
-    device, rare = state[_key(DEVICE)], bool(state[_key(CLIENT)])
-    if device != login[DEVICE][0] or rare != context_state(login, CLIENT):
-        located = _with_values(located, {DEVICE: device, **client_donor(event_id, device, rare)})
-    return located
+    held = state["held"]
+    users, attack = _key("asn_prior_users"), _key("asn_prior_attack_share")
+    if state[_key("global_share_asn")] == 0:  # never seen: no accounts either
+        if "asn_prior_users" not in held:
+            held["asn_prior_users"] = state[users]
+        state[users] = 0
+        return
+    if "asn_prior_users" in held:
+        state[users] = held.pop("asn_prior_users")
+    if state[users] == 0:  # seen before: at least one account
+        real = login["asn_prior_users"][0]
+        state[users] = real if real else SLIDERS["asn_prior_users"].steps[1]
+    if state[attack] is None:  # seen before: a known attack history
+        real = login["asn_prior_attack_share"][0]
+        state[attack] = real if real is not None else 0.0
+
+
+def edited_login(login: pl.DataFrame) -> pl.DataFrame:
+    """The real login with the number inputs and the device type of the controls.
+
+    An IP is part of its network, so it never has a bigger share of logins or more accounts than the
+    network, and a network never has more failed attempts than attempts.
+    """
+    state = st.session_state
+    edited = login
+    for column in SLIDERS:
+        if state[_key(column)] != login[column][0]:
+            value = pl.lit(state[_key(column)]).cast(login[column].dtype)
+            edited = edited.with_columns(value.alias(column))
+    edited = edited.with_columns(
+        pl.min_horizontal("global_share_ip", "global_share_asn").alias("global_share_ip"),
+        pl.min_horizontal("ip_prior_users", "asn_prior_users")
+        .cast(login["ip_prior_users"].dtype)
+        .alias("ip_prior_users"),
+        pl.min_horizontal("asn_fails_prev24h", "asn_attempts_prev24h")
+        .cast(login["asn_fails_prev24h"].dtype)
+        .alias("asn_fails_prev24h"),
+    )
+    device = state[_key(DEVICE)]
+    if device != login[DEVICE][0]:
+        edited = edited.with_columns(pl.lit(device).cast(login[DEVICE].dtype).alias(DEVICE))
+        if device in device_shares():
+            share = pl.lit(device_shares()[device]).cast(login["global_share_device_type"].dtype)
+            edited = edited.with_columns(share.alias("global_share_device_type"))
+    return edited
 
 
 def current_required(login: pl.DataFrame, located: pl.DataFrame) -> dict[str, tuple[bool, str]]:
-    """The signals the rules fix for the current controls (see ``inference.what_if``).
+    """The switches the rules fix for the current controls (see ``inference.what_if``).
 
-    A signal a rule forced counts with the value the viewer had given it, so a rule never feeds itself.
+    A switch a rule forced counts with the value the viewer had given it, so a rule never feeds itself.
     """
     state = st.session_state
     forced = state["forced"]
-    switches = {
-        signal: forced[signal] if signal in forced else bool(state.get(_key(signal)))
-        for signal in SIGNALS
-    }
-    moved = {
-        "network": tuple(bool(state[_key(n)]) for n in NETWORK)
-        != tuple(context_state(login, n) for n in NETWORK),
-        "country": bool(state[_key("rare_country")]) != context_state(login, "rare_country"),
-        "browser": bool(state[_key("rare_browser")]) != context_state(login, "rare_browser"),
-        "device": state[_key(DEVICE)] != login[DEVICE][0],
-    }
-    return required_signals(
-        login, located, switches, state.get(_key(GAP)), {g for g, m in moved.items() if m}
-    )
+    switches = {s: forced[s] if s in forced else bool(state.get(_key(s))) for s in SIGNALS}
+    moved = {spec.group for c, spec in SLIDERS.items() if state[_key(c)] != login[c][0]}
+    if state[_key(DEVICE)] != login[DEVICE][0]:
+        moved.add("device")
+    return required_signals(login, located, switches, state.get(_key(GAP)), moved)
 
 
 def follow_rules(required: dict[str, tuple[bool, str]]) -> None:
-    """Set the signals a rule fixes; give a signal back the viewer's value once no rule fixes it any more."""
+    """Set the switches a rule fixes; give one back the viewer's value once no rule fixes it."""
     state = st.session_state
-    forced = state["forced"]  # signal -> the value the viewer had given it
+    forced = state["forced"]
     for signal, (value, _reason) in required.items():
         current = bool(state.get(_key(signal)))
         if signal not in forced and current != value:
@@ -472,36 +486,75 @@ def follow_rules(required: dict[str, tuple[bool, str]]) -> None:
         state[_key(signal)] = forced.pop(signal)
 
 
-def signal_panel(login: pl.DataFrame) -> pl.DataFrame:
-    """Left column: every signal as a control; returns the login with the controls applied."""
+def _help(name: str, fixed: str | None = None) -> str | None:
+    """The definition (only for technical terms), and why a control is greyed out."""
+    parts = [DEFINITIONS.get(name), f"**Greyed out:** {fixed}" if fixed else None]
+    return "\n\n".join(p for p in parts if p) or None
+
+
+def slider(login: pl.DataFrame, column: str) -> None:
+    """A number input on plain steps (the real value included), and where its usual values are."""
+    state = st.session_state
+    spec, real = SLIDERS[column], login[column][0]
+    steps: list[float | None] = sorted({*spec.steps, *([real] if real is not None else [])})
+    never_seen = state[_key("global_share_asn")] == 0
+    if column == "asn_prior_users" and not never_seen:
+        steps = [s for s in steps if s != 0]  # a network seen before had accounts
+    if column == "asn_prior_attack_share" and never_seen:
+        steps = [None, *steps]  # failed attempts only, or none at all
+    locked = column == "asn_prior_users" and never_seen
+    help_text = f"{spec.help}\n\n**Greyed out:** {NEVER_SEEN_NETWORK}" if locked else spec.help
+    st.select_slider(
+        spec.label,
+        steps,
+        key=_key(column),
+        format_func=lambda v: fmt(column, v),
+        help=help_text,
+        disabled=locked,
+    )
+    takeover, legit = usual_values()[column]
+    st.caption(
+        f"Takeovers usually: **{fmt(column, takeover)}** · legitimate logins usually: "
+        f"**{fmt(column, legit)}**"
+    )
+
+
+def input_panel(login: pl.DataFrame) -> pl.DataFrame:
+    """Left column: every input as a control; returns the login with the controls applied."""
     if st.session_state.get("loaded") != int(login["event_id"][0]):
-        load_signals(login)
+        load_inputs(login)
     first_login = bool(login["prior_successes"][0] == 0)
-    located = locate(login)
+    network_rules(login)
+    located = edited_login(login)
     required = current_required(login, located)
     follow_rules(required)
 
-    st.subheader("Signals")
+    st.subheader("The login's inputs")
     st.caption(
-        "On = the signal is present in this login. Change any of them to see the score move."
+        "Each control is one input the model receives, set to the real login's value. Move any of "
+        "them: the model re-scores the login with exactly these values. Greyed-out controls follow from "
+        "the others (the ? says why)."
     )
     st.markdown("**Where the login comes from**")
-    for name, context in CONTEXT.items():
-        st.toggle(context.text, key=_key(name), help=_help(name))
+    for column in SLIDERS:
+        slider(login, column)
     devices = [*DEVICES, *([login[DEVICE][0]] if login[DEVICE][0] not in DEVICES else [])]
     st.radio("Device type", devices, horizontal=True, key=_key(DEVICE), help=_help(DEVICE))
-    for column, text in NETWORK_SIGNALS.items():
-        if column in login.columns:
-            fixed = required[column][1] if column in required else None
-            st.toggle(text, key=_key(column), disabled=fixed is not None, help=_help(column, fixed))
+    fixed = required["attack_ip"][1] if "attack_ip" in required else None
+    st.toggle(
+        "IP address on an attack list",
+        key=_key("attack_ip"),
+        disabled=fixed is not None,
+        help=_help("attack_ip", fixed),
+    )
     st.markdown("**Compared with the account's earlier logins**")
     if first_login:
         st.caption(
             "This is the account's first successful login: there is no earlier login to compare with, "
-            "so these signals do not exist yet (greyed out)."
+            "so these inputs do not exist yet (greyed out)."
         )
     else:
-        st.select_slider("Previous login of this account", list(GAPS), key=_key(GAP))
+        st.select_slider("Time since this account's previous login", list(GAPS), key=_key(GAP))
     for column, text in HISTORY_SIGNALS.items():
         if column not in login.columns:
             continue
@@ -515,24 +568,16 @@ def signal_panel(login: pl.DataFrame) -> pl.DataFrame:
             disabled=first_login or reason is not None,
             help=_help(column, reason),
         )
-    st.button("Back to the real login", on_click=load_signals, args=(login,))
-    return apply_signals(login, located, first_login)
+    st.button("Back to the real login", on_click=load_inputs, args=(login,))
+    return apply_switches(login, located, first_login)
 
 
-def _help(signal: str, fixed: str | None = None) -> str | None:
-    """The signal's definition (only for technical terms), and why it is greyed out when a rule fixes it."""
-    parts = [DEFINITIONS.get(signal), f"**Greyed out:** {fixed}" if fixed else None]
-    return "\n\n".join(p for p in parts if p) or None
-
-
-def apply_signals(login: pl.DataFrame, located: pl.DataFrame, first_login: bool) -> pl.DataFrame:
-    """The located login with the signal switches applied, keeping dependent inputs consistent.
+def apply_switches(login: pl.DataFrame, located: pl.DataFrame, first_login: bool) -> pl.DataFrame:
+    """The located login with the switches and the time gap applied, keeping dependent inputs consistent.
 
     Only controls moved away from the real value change the login (a missing value stays missing).
     """
-    state = st.session_state
-    edited = located
-    moved = False
+    state, edited, moved = st.session_state, located, False
     for column in SIGNALS:
         if column not in login.columns or (first_login and column in HISTORY_SIGNALS):
             continue
@@ -545,149 +590,171 @@ def apply_signals(login: pl.DataFrame, located: pl.DataFrame, first_login: bool)
             pl.sum_horizontal(key).cast(pl.UInt8).alias("n_new_key_signals")
         )
     if not first_login and state[_key(GAP)] != gap_of(login["hours_since_prev_success"][0]):
-        hours = typical_values()["gap"][state[_key(GAP)]]
+        hours = typical_gap_hours()[state[_key(GAP)]]
         if hours is not None:
             edited = edited.with_columns(pl.lit(hours).alias("hours_since_prev_success"))
-    share = "ip_prior_attack_share"
-    touched = state[_key("attack_ip")] != _real(login, "attack_ip") or (
-        share in login.columns and located[share][0] != login[share][0]
-    )
-    if touched:  # only re-derive what a control changed, so the real login is never altered
+    if state[_key("attack_ip")] != _real(login, "attack_ip"):
         edited = with_attack_share(edited)
     return edited
 
 
-def _with_values(login: pl.DataFrame, values: Values) -> pl.DataFrame:
-    return login.with_columns(
-        pl.lit(value).cast(login[column].dtype).alias(column) for column, value in values.items()
-    )
+# ---------- the model's answer -----------------------------------------------------------------------
 
 
-def changed_inputs(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> list[str]:
-    return [c for c in det.columns if c in login.columns and edited[c][0] != login[c][0]]
+def frequency(score: float) -> str:
+    """What a score this high meant in the dataset (development logins, out-of-fold scores)."""
+    for low, high, logins, takeovers in score_bins():
+        if low <= score < high and logins:
+            return (
+                f"In the dataset, **{takeovers:,} of {logins:,}** logins with a score in this range "
+                f"({low:.4f} to {min(high, 1):.4f}) were takeovers (**{_percent('', takeovers / logins)}**). "
+                "Overall, about 1 login in 70,000 is a takeover."
+            )
+    return ""
 
 
-def risk_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None:
-    """Right column: score, rank, response tier and the inputs behind the score."""
-    score, original = float(det.score(edited)[0]), float(det.score(login)[0])
-    changed = changed_inputs(det, login, edited)
-    moved = abs(score - original) >= MIN_SCORE_CHANGE
-    tier = det.tier(score)
-    st.subheader("Risk")
-    st.metric(
-        "Takeover score",
-        f"{score:.4f}",
-        delta=f"{score - original:+.4f} from the real login's {original:.4f}"
-        if changed and moved
-        else None,
-        delta_color="inverse",
-    )
-    if changed and not moved:
-        st.caption(
-            "These changes alone do not move the score of this login; try combining more signals."
-        )
-    rank = det.riskier_than(score)
-    rank_text = "more than 99.99%" if rank > 0.9999 else f"{rank:.2%}"  # noqa: PLR2004
-    st.caption(f"Riskier than **{rank_text}** of development logins.")
-    getattr(st, TIER_STYLE[tier])(f"Response: **{RESPONSE[tier]}**", icon=None)
-    st.caption(
-        f"Ask for 2FA from {det.thresholds['step-up']:.4f}, the top 1% of development logins; "
-        f"block from {det.thresholds['review / block']:.4f}, the top 0.1%."
-    )
-    st.subheader("Why")
-    everything = det.explain(edited, top=len(det.columns) * 3)[0]  # every input, by |contribution|
-    shown_first = everything.filter(pl.col("input").is_in(changed))  # always show what was changed
-    rest = everything.filter(~pl.col("input").is_in(changed))
-    raises = rest.filter(pl.col("contribution") > MIN_EFFECT).head(4)  # riskier first
-    lowers = rest.filter(pl.col("contribution") < -MIN_EFFECT).head(3)
-    effect = (
-        pl.when(pl.col("contribution") > 0).then(pl.lit("↑ raises")).otherwise(pl.lit("↓ lowers"))
-    )
-    st.table(
-        pl.concat([shown_first, raises, lowers])
-        .with_columns(pl.col("input").map_elements(label, return_dtype=pl.String))
-        .with_columns(effect.alias("effect"), pl.col("contribution").round(3)),
-    )
-    st.caption(
-        "Tree SHAP values relative to a typical login: any input you changed, then the inputs that make this "
-        "login riskier than a typical one, then those that make it safer."
-    )
-    comparison_panel(det, login, score, original)
-
-
-def _switch(value: object) -> str:
-    return "on" if value else "off"
-
-
-def signal_rows(login: pl.DataFrame) -> list[tuple[str, str, str]]:
-    """Every control: its name, the scenario's real value and the value it has now."""
-    state = st.session_state
-    rows = [
-        (context.text, _switch(context_state(login, name)), _switch(state[_key(name)]))
-        for name, context in CONTEXT.items()
-    ]
-    rows.append(("Device type", str(login[DEVICE][0]), str(state[_key(DEVICE)])))
-    signals = dict(NETWORK_SIGNALS)
-    if login["prior_successes"][0] > 0:  # a first login has no earlier login to compare with
-        gap = gap_of(login["hours_since_prev_success"][0])
-        rows.append(("Previous login of this account", str(gap), str(state[_key(GAP)])))
-        signals |= HISTORY_SIGNALS
-    rows += [
-        (text, _switch(_real(login, column)), _switch(state[_key(column)]))
-        for column, text in signals.items()
-        if column in login.columns
-    ]
+def control_rows(login: pl.DataFrame) -> dict[str, str]:
+    """Login column -> the row (control) it belongs to, in the order of the controls on the left."""
+    rows = {c: s.label for c, s in SLIDERS.items()}
+    rows |= {DEVICE: "Device type", "global_share_device_type": "Device type"}
+    rows["attack_ip"] = "IP address on an attack list"
+    if login["prior_successes"][0] > 0:
+        rows["hours_since_prev_success"] = "Time since this account's previous login"
+        rows |= {c: text for c, text in HISTORY_SIGNALS.items() if c in login.columns}
+        rows["n_new_key_signals"] = "Number of new signals at once (follows the switches)"
     return rows
 
 
-def comparison_panel(det: Detector, login: pl.DataFrame, score: float, original: float) -> None:
-    """The scenario's real signals next to the viewer's, with the score of each as the last row."""
-    st.subheader("Real login and your changes")
-    st.caption(
-        "The signals you can change here, as they were in the scenario's real login and as they are now "
-        "(changed ones in bold; a greyed-out switch may have changed with them), and the model's score for each."
+def source_of(name: str, columns: list[str]) -> str:
+    """The login column a model input comes from (one-hot, cyclic and never-seen encodings)."""
+    if name.startswith(NEVER_SEEN_PREFIX):
+        return name.removeprefix(NEVER_SEEN_PREFIX)
+    if name in columns:
+        return name
+    return next((c for c in columns if name.startswith(f"{c}_")), name)
+
+
+def _effect(contribution: float) -> str:
+    if contribution > MIN_EFFECT:
+        return "raises"
+    return "lowers" if contribution < -MIN_EFFECT else ""
+
+
+def score_table(
+    det: Detector, login: pl.DataFrame, edited: pl.DataFrame, score: float, original: float
+) -> pd.DataFrame:
+    """One row per control (in the controls' order), the other inputs, then the score."""
+    names, values = det.contributions(edited)
+    rows_of, columns = control_rows(login), list(login.columns)
+    part: dict[str, float] = {}
+    for name, value in zip(names, values[0], strict=True):
+        row = rows_of.get(source_of(name, columns), OTHER)
+        part[row] = part.get(row, 0.0) + float(value)
+    table = [(START, "", "", f"{score - float(values[0].sum()):.3f}", "")]
+    shown = {START}
+    for column, row in rows_of.items():
+        if row in shown:
+            continue
+        shown.add(row)
+        if column == "hours_since_prev_success":
+            real, yours = gap_of(login[column][0]), st.session_state[_key(GAP)]
+        else:
+            real, yours = fmt(column, login[column][0]), fmt(column, edited[column][0])
+        table.append(
+            (row, str(real), str(yours), f"{part.get(row, 0.0):+.3f}", _effect(part.get(row, 0.0)))
+        )
+    other = part.get(OTHER, 0.0)
+    table.append((OTHER, "", "", f"{other:+.3f}", _effect(other)))
+    delta = score - original
+    arrow = "↑" if delta > 0 else "↓"
+    change = "no change" if abs(delta) < MIN_SCORE_CHANGE else f"{arrow} {delta:+.4f}"
+    table.append(
+        (
+            "Takeover score",
+            f"{original:.4f} ({SHORT[det.tier(original)]})",
+            f"{score:.4f} ({SHORT[det.tier(score)]})",
+            f"= {score:.3f}",
+            change,
+        )
+    )
+    return pd.DataFrame(
+        table, columns=["input", "real login", "with your changes", "contribution", "effect"]
     )
 
-    def scored(value: float) -> str:
-        return f"{value:.4f} ({RESPONSE[det.tier(value)]})"
 
-    rows = [*signal_rows(login), ("Takeover score", scored(original), scored(score))]
-    table = pd.DataFrame(rows, columns=["signal", "real login", "with your changes"])
-    changed = table["real login"] != table["with your changes"]
-    st.table(
-        table.style.apply(
-            lambda row: ["font-weight: bold" if changed[row.name] else ""] * len(row), axis=1
-        ).hide(axis="index")
+def risk_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None:
+    """Right column: score, what it means, the response, and how the score is built."""
+    score, original = float(det.score(edited)[0]), float(det.score(login)[0])
+    delta = score - original
+    tier = det.tier(score)
+    st.subheader("The model's answer")
+    st.metric(
+        "Takeover score",
+        f"{score:.4f}",
+        delta=f"{delta:+.4f} from the real login's {original:.4f}"
+        if abs(delta) >= MIN_SCORE_CHANGE
+        else None,
+        delta_color="inverse",
+    )
+    st.markdown(
+        frequency(score),
+        help="The 7.9 million logins of the dataset's training part, each scored by a model that had "
+        "not seen it during training.",
+    )
+    getattr(st, TIER_STYLE[tier])(f"Response: **{RESPONSE[tier]}**", icon=None)
+    st.caption(
+        f"Ask for 2FA from {det.thresholds['step-up']:.4f}, the riskiest 1% of the dataset's logins; "
+        f"block from {det.thresholds['review / block']:.4f}, the riskiest 0.1%. The service sets these "
+        "alert budgets; the scores they fall on were fixed before the final test."
+    )
+    st.subheader("How the score is built")
+    table = score_table(det, login, edited, score, original)
+    last = len(table) - 1
+    if delta >= MIN_SCORE_CHANGE:
+        total = "background-color: #fdecea; color: #b42318; font-weight: bold"
+    elif delta <= -MIN_SCORE_CHANGE:
+        total = "background-color: #e7f6ec; color: #1e7a34; font-weight: bold"
+    else:
+        total = "font-weight: bold"
+
+    def style(row: pd.Series) -> list[str]:
+        if row.name == last:
+            return [total] * len(row)
+        changed = row["real login"] != row["with your changes"]
+        return ["font-weight: bold" if changed else ""] * len(row)
+
+    st.table(table.style.apply(style, axis=1).hide(axis="index"))
+    st.caption(
+        "Start from a typical ordinary login's score, add each contribution, and you get the score "
+        "(tree SHAP). Rows follow the controls on the left; changed inputs in bold. The last row is red "
+        "when your changes raised the score and green when they lowered it."
     )
 
 
 def main() -> None:
     st.set_page_config(page_title="ATO risk demo", layout="wide")
-    st.markdown(  # larger category buttons
+    st.markdown(  # larger kind buttons
         "<style>[class*='st-key-kind-'] button {min-height: 3.5rem; font-size: 1.05rem;}</style>",
         unsafe_allow_html=True,
     )
-    st.title("Account-takeover risk — demo")
-    st.caption(
-        "Proof of concept for the thesis *Detección de Account Takeover mediante identificación automática de "
-        "anomalías comportamentales en registros de autenticación*. Synthetic data (RBA dataset, Wiefling et al. 2022); "
-        "logins from users the model never saw in training."
-    )
+    st.title("Account-takeover risk demo")
     try:
         det = explained_detector()
         counts, picks = scenarios()
     except FileNotFoundError as missing:
         st.error(
-            f"Model or data not found ({missing.filename}). Run the pipeline and notebooks 06 and 07 first; see README."
+            f"Model or data not found ({missing.filename}). Run the pipeline and notebooks 06 and 07 "
+            "first; see README."
         )
         st.stop()
     if not picks:
         st.info("No logins to show.")
         st.stop()
+    introduction()
     login = pick_scenario(counts, picks)
     left, right = st.columns([1, 1.2])
     with left:
-        edited = signal_panel(login)
+        edited = input_panel(login)
     with right:
         risk_panel(det, login, edited)
 

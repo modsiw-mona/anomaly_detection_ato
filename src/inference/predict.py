@@ -112,15 +112,23 @@ class Detector:
         _, values = self._shap(typical)
         self._reference = values.mean(axis=0)
 
+    def contributions(self, frame: pl.DataFrame) -> tuple[list[str], FloatArray]:
+        """Every model input's tree-SHAP contribution for each row (relative to the reference, if set).
+
+        With a reference, a row's contributions add up to its score minus the reference's mean score.
+        """
+        names, values = self._shap(frame)
+        if self._reference is not None:
+            values = values - self._reference
+        return names, values
+
     def explain(self, frame: pl.DataFrame, top: int = 6) -> list[pl.DataFrame]:
         """For each row, the ``top`` inputs that moved its score most (tree SHAP), with their values.
 
         With :meth:`set_reference`, a contribution is relative to a typical login: positive means
         "this input makes the login riskier than a typical one".
         """
-        names, values = self._shap(frame)
-        if self._reference is not None:
-            values = values - self._reference
+        names, values = self.contributions(frame)
         explanations = []
         for i in range(frame.height):
             order = np.argsort(-np.abs(values[i]))[:top]
