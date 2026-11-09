@@ -66,23 +66,17 @@ RESPONSE = {
     ALLOW: "allow",
 }
 SHORT = {"review / block": "block", "step-up": "ask for 2FA", ALLOW: "allow"}  # in the table
-KINDS = {  # stable URL slug -> button label, and what the kind means
-    "block": ("Takeover → block", "A real takeover the model scores high enough to block."),
-    "2fa": (
-        "Takeover → ask for 2FA",
-        "A real takeover the model catches by asking for a second factor.",
-    ),
-    "missed": ("Takeover the model misses", "A real takeover the model lets through."),
-    "false-alarm": (
-        "Legitimate login flagged (false alarm)",
-        "A real user's login the model asks for 2FA by mistake.",
-    ),
-    "ordinary": (
-        "Ordinary legitimate login",
-        "A real user's login the model lets through, as it should.",
-    ),
+KINDS = {  # stable URL slug -> button label (says what the login is and what the model did)
+    "block": "Takeover: the model blocks it",
+    "2fa": "Takeover: the model asks for 2FA",
+    "missed": "Takeover: the model misses it",
+    "false-alarm": "Real user: the model asks for 2FA by mistake",
+    "ordinary": "Real user: the model lets them in",
 }
-SCENARIOS = {"returning": "Returning account", "first": "First login of a new account"}
+SCENARIOS = {
+    "returning": "An account that had logged in before",
+    "first": "An account's first login",
+}
 ASN = (
     "ASN (autonomous system number): the number that identifies a network on the internet, such as an "
     "internet provider's, a company's or a cloud host's."
@@ -110,8 +104,10 @@ SLIDERS = {
         "How common the network is: share of all earlier logins from it",
         (0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.05, 0.13, 0.3),
         share=True,
-        help=f"{ASN} A big home or mobile internet provider carries a large share of all logins; a "
-        "small hosting company or VPN network, almost none. 0% means nobody had logged in from it before.",
+        help="The network is the internet provider, company or cloud host the login comes through (its "
+        "ASN, autonomous system number). This is the share of all earlier logins to the service that came "
+        "through the same network: a big home or mobile provider carries a large share, a small hosting "
+        "company or a VPN almost none, and 0% means nobody had logged in through it before.",
     ),
     "asn_prior_users": Slider(
         "Different accounts that had logged in from this network",
@@ -326,25 +322,21 @@ def _real(login: pl.DataFrame, column: str) -> bool:
 
 def introduction() -> None:
     st.markdown(
-        f"This demo accompanies the master's thesis *{THESIS_EN}* ([code and results]({REPOSITORY})). "
-        "Every successful login gets a **takeover score** from a machine-learning model, and a **response** "
-        "in proportion to it: let the person in, ask for a second factor (2FA), or hold the sign-in until "
-        "they verify their identity. The logins are real records of a public synthetic dataset (RBA dataset, "
-        "Wiefling et al. 2022), from users the model never saw in training."
+        f"This demo accompanies the master's thesis *{THESIS_EN}* ([code and results]({REPOSITORY})). A model "
+        "scores every login and responds in proportion to the risk: it lets the person in, asks for a second "
+        "factor (2FA), or holds the sign-in. The logins are real records (RBA dataset, Wiefling et al. 2022) of "
+        "users the model never saw in training."
+    )
+    title, button = st.columns([4, 1], vertical_alignment="center")
+    title.markdown("**How to use it**")
+    button.button(
+        "Take the guided tour", key="tour-start", on_click=_tour_go, args=(0,), width="stretch"
     )
     st.markdown(
-        "**How to use it**\n"
-        "1. **Choose a kind of authentication record** below, and a scenario: an account that had logged in "
-        "before, or an account's first login.\n"
-        "2. **Look at the login attempt** on the left: where and how a real person, or an attacker, logged in.\n"
-        "3. **Press Log in** on the sign-in card: see the screen the person would see and, below it, what the "
-        "system saw.\n"
-        "4. **Change the attempt** on the left and log in again to see how the response changes. **Back to "
-        "the real login** undoes your changes.\n"
-        "5. **Compare in the table** *How the score is built*: how much each input raises (+) or lowers (-) "
-        "the score."
+        "1. **Pick a login** below: what kind of record, and which account.\n"
+        "2. **Press Log in** to see what the person sees, and what the system saw.\n"
+        "3. **Change the attempt** on the left and log in again. **Back to the real login** undoes it."
     )
-    st.button("Take the guided tour", key="tour-start", on_click=_tour_go, args=(0,))
 
 
 def load_inputs(login: pl.DataFrame) -> None:
@@ -362,53 +354,74 @@ def load_inputs(login: pl.DataFrame) -> None:
     state["loaded"] = int(login["event_id"][0])
 
 
+def _choice_buttons(options: dict[str, str], chosen: str, prefix: str) -> str | None:
+    """A row of equal buttons, the chosen one highlighted; returns the option clicked, if any."""
+    clicked = None
+    for column, (slug, label) in zip(st.columns(len(options)), options.items(), strict=True):
+        if column.button(
+            label,
+            key=f"{prefix}-{slug}",
+            type="primary" if slug == chosen else "secondary",
+            width="stretch",
+        ):
+            clicked = slug
+    return clicked
+
+
 def pick_scenario(
     counts: dict[str, int], picks: dict[str, dict[str, pl.DataFrame]]
 ) -> pl.DataFrame:
-    """Top of the page: one button per kind of outcome, then its scenarios; returns the chosen login."""
+    """Top of the page: the kind of record, then the account; shows the chosen login and returns it."""
+    state = st.session_state
     slugs = list(picks)
-    if st.session_state.get("kind") not in slugs:  # ?example=<slug>&scenario=<name> opens one
+    if state.get("kind") not in slugs:  # ?example=<slug>&scenario=<name> opens one
         wanted = st.query_params.get("example", slugs[0])
-        st.session_state["kind"] = wanted if wanted in slugs else slugs[0]
-    for column, slug in zip(st.columns(len(slugs)), slugs, strict=True):
-        chosen = slug == st.session_state["kind"]
-        name, text = KINDS[slug]
-        if column.button(
-            name, key=f"kind-{slug}", type="primary" if chosen else "secondary", width="stretch"
-        ):
-            st.session_state["kind"] = slug
-            st.rerun()
-        column.caption(text)
-    kind = st.session_state["kind"]
+        state["kind"] = wanted if wanted in slugs else slugs[0]
+    st.markdown("**What kind of record?**")
+    clicked = _choice_buttons({s: KINDS[s] for s in slugs}, state["kind"], "kind")
+    if clicked:
+        state["kind"] = clicked
+        st.rerun()
+    kind = state["kind"]
     options = list(picks[kind])
-    requested = st.query_params.get("scenario")
-    scenario = st.radio(
-        "Scenario",
-        options,
-        index=options.index(requested) if requested in options else 0,
-        format_func=SCENARIOS.__getitem__,
-        horizontal=True,
-        key=f"scenario-{kind}",
+    if state.get(f"scenario-{kind}") not in options:
+        requested = st.query_params.get("scenario")
+        state[f"scenario-{kind}"] = requested if requested in options else options[0]
+    st.markdown("**Which account?**")
+    clicked = _choice_buttons(
+        {o: SCENARIOS[o] for o in options}, state[f"scenario-{kind}"], "scenario"
     )
+    if clicked:
+        state[f"scenario-{kind}"] = clicked
+        st.rerun()
+    scenario = state[f"scenario-{kind}"]
     st.query_params.update({"example": kind, "scenario": scenario})  # the URL reopens it
     login = picks[kind][scenario]
-    st.caption(describe(login, counts[kind]))
+    selected_login(login, counts[kind])
     return login
 
 
-def describe(login: pl.DataFrame, count: int) -> str:
-    """One line about the scenario's real login."""
+def selected_login(login: pl.DataFrame, count: int) -> None:
+    """The chosen login at a glance: what really happened, the account, where from and when."""
     prior = int(login["prior_successes"][0])
-    if prior == 0:
-        account = "the account's first successful login"
-    else:
-        account = f"{prior:,} earlier login{'s' if prior > 1 else ''} of this account"
-    truth = "**takeover**" if login["label_ato"][0] else "**legitimate**"
-    return (
-        f"**The login:** {account}, from {login['country'][0]} on a {login[DEVICE][0]}, "
-        f"{login['timestamp'][0]:%Y-%m-%d}. Ground truth: {truth}. It is the typical (median-score) "
-        f"one of the {count:,} test logins of this kind."
-    )
+    account = "first login" if prior == 0 else f"{prior:,} earlier login{'s' if prior > 1 else ''}"
+    truth = "A takeover" if login["label_ato"][0] else "The real user"
+    with st.container(border=True, key="selected"):
+        st.markdown("**The selected login**")
+        facts = st.columns(4)
+        for column, (name, value) in zip(
+            facts,
+            (
+                ("What really happened", truth),
+                ("Account", account),
+                ("From", f"{login['country'][0]}, on a {login[DEVICE][0]}"),
+                ("When", f"{login['timestamp'][0]:%d %b %Y}"),
+            ),
+            strict=True,
+        ):
+            column.caption(name)
+            column.markdown(f"**{value}**")
+        st.caption(f"A real test login, the typical one of the {count:,} of this kind.")
 
 
 # ---------- the inputs -------------------------------------------------------------------------------
@@ -508,7 +521,11 @@ def slider(login: pl.DataFrame, column: str) -> None:
     if column == "asn_prior_attack_share" and never_seen:
         steps = [None, *steps]  # failed attempts only, or none at all
     locked = column == "asn_prior_users" and never_seen
-    help_text = f"{spec.help}\n\n**Greyed out:** {NEVER_SEEN_NETWORK}" if locked else spec.help
+    takeover, legit = usual_values()[column]
+    usual = f"**Takeovers usually:** {fmt(column, takeover)}. **Legitimate logins usually:** {fmt(column, legit)}."
+    help_text = "\n\n".join(
+        [spec.help, usual, *([f"**Greyed out:** {NEVER_SEEN_NETWORK}"] if locked else [])]
+    )
     st.select_slider(
         spec.label,
         steps,
@@ -516,11 +533,6 @@ def slider(login: pl.DataFrame, column: str) -> None:
         format_func=lambda v: fmt(column, v),
         help=help_text,
         disabled=locked,
-    )
-    takeover, legit = usual_values()[column]
-    st.caption(
-        f"Takeovers usually: **{fmt(column, takeover)}** · legitimate logins usually: "
-        f"**{fmt(column, legit)}**"
     )
 
 
@@ -534,7 +546,7 @@ def input_panel(login: pl.DataFrame) -> pl.DataFrame:
     required = current_required(login, located)
     follow_rules(required)
 
-    st.subheader("The login attempt")
+    st.subheader("2. The login attempt")
     st.caption(
         "Where and how this person is logging in. Each control is one input the model receives, set to the "
         "real login's value; change any of them and log in again. Greyed-out controls follow from the "
@@ -697,23 +709,35 @@ def username(login: pl.DataFrame) -> str:
 
 
 def sign_in_card(login: pl.DataFrame, attempt: int) -> bool:
-    """The generic sign-in card; True once this exact attempt was submitted."""
+    """The generic sign-in card, with a hint on what to do next; True once this exact attempt was submitted."""
     state = st.session_state
+    event = int(login["event_id"][0])
+    submitted = state.get("submitted")
+    changed = isinstance(submitted, tuple) and submitted[0] == event and submitted[1] != attempt
+    if changed and state.get("notified") != attempt:
+        st.toast("The login attempt changed. Press Log in again to see the new response.")
+        state["notified"] = attempt
     with st.container(key="tour-card", border=True):
         st.markdown("#### Example SSO")
         st.caption("Sign in to continue")
         st.text_input("Username", value=username(login), disabled=True)
         st.text_input("Password", value="correct-password", type="password", disabled=True)
-        if st.button("Log in", key="login", type="primary", width="stretch"):
-            state["submitted"] = attempt
+        if st.button(
+            "Log in again" if changed else "Log in", key="login", type="primary", width="stretch"
+        ):
+            state["submitted"] = submitted = (event, attempt)
+            st.toast("Login checked. The response is below.")
         st.caption(
             "The credentials are valid in every scenario: a takeover uses the real password, so only "
             "where and how the login happens can tell the owner from an attacker."
         )
-    if state.get("submitted") == attempt:
+    if submitted == (event, attempt):
+        st.info("Next: change anything in the login attempt on the left, then log in again.")
         return True
-    if state.get("submitted") is not None:
+    if changed:
         st.info("The login attempt changed. Log in again to see the new response.")
+    else:
+        st.info("Next: press **Log in** to test this login.")
     return False
 
 
@@ -816,8 +840,9 @@ def position(det: Detector, score: float) -> str:
 def login_panel(det: Detector, login: pl.DataFrame, edited: pl.DataFrame) -> None:
     """Right column: the sign-in card; once submitted, the response and what the system saw."""
     attempt = attempt_id(edited)
-    if _tour_step() in RESPONSE_STEPS:
-        st.session_state["submitted"] = attempt  # the tour logs in to show the response
+    if _tour_step() in RESPONSE_STEPS:  # the tour logs in to show the response
+        st.session_state["submitted"] = (int(login["event_id"][0]), attempt)
+    st.subheader("3. Log in")
     if not sign_in_card(login, attempt):
         return
     score = float(det.score(edited)[0])
@@ -891,8 +916,9 @@ def tour() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="ATO risk demo", layout="wide")
-    st.markdown(  # larger kind buttons
-        "<style>[class*='st-key-kind-'] button {min-height: 3.5rem; font-size: 1.05rem;}</style>",
+    st.markdown(  # the two rows of choice buttons look alike
+        "<style>[class*='st-key-kind-'] button, [class*='st-key-scenario-'] button "
+        "{min-height: 2.8rem;}</style>",
         unsafe_allow_html=True,
     )
     st.title("Account-takeover risk demo")
@@ -917,6 +943,7 @@ def main() -> None:
         st.info("No logins to show.")
         st.stop()
     introduction()
+    st.subheader("1. Pick a login")
     with st.container(key="tour-kinds"):
         login = pick_scenario(counts, picks)
     left, right = st.columns([1, 1.2])

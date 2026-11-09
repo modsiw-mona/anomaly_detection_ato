@@ -6,21 +6,24 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
 ## What it does
 
 - **The page explains itself.** It opens with what the demo is (the thesis title, with a link to this
-  repository), what the model gives each login (a takeover score and a proportional response) and five steps
-  on how to use it.
-- **Choose a real login, not a row number.** Buttons at the top pick a kind of outcome, each with one line on
-  what it means: takeover blocked, takeover asked for 2FA, legitimate login flagged (false alarm), ordinary
-  legitimate login. Each kind offers two scenarios, a **returning account** and an account's **first login**;
-  each is a real login from the **test side** of the split (users the model never saw), the median-score login
-  of its scenario.
+  repository) and what the model gives each login (a takeover score and a proportional response), in two
+  sentences, then three short steps; *Take the guided tour* sits next to them. The page is numbered: 1. pick a
+  login, 2. the login attempt, 3. log in.
+- **Choose a real login, not a row number.** A row of buttons picks the kind of record, each label saying what
+  it is and what the model did ("Takeover: the model blocks it", "Real user: the model asks for 2FA by mistake",
+  and so on); a second row of buttons the same size picks the account: one that had logged in before, or an
+  account's first login. Each is a real login from the **test side** of the split (users the model never saw),
+  the median-score login of its scenario. A card then shows **the selected login** at a glance: what really
+  happened (a takeover or the real user), the account's earlier logins, where from and when.
 - **Every control is one model input**, set to the real login's value. The model re-scores exactly the inputs
   shown; nothing is copied from another login (Google's What-If Tool works the same way: edit a data point's
   values and run the model again).
     - *Number inputs are sliders over plain steps*, the real value included: how common the network is (share of
       all earlier logins from it), different accounts that had logged in from it, login attempts from it in the
       24 hours before, the share of its earlier attempts that came from attack IPs, how common the country is,
-      how common the browser version is. Under each slider, **where takeovers and legitimate logins usually are**
-      (medians of the development side), so a viewer knows what a value means without knowing the data.
+      how common the browser version is. Each slider's "?" says what it measures and **where takeovers and
+      legitimate logins usually are** (medians of the development side), so a viewer knows what a value means
+      without knowing the data, and the page stays short.
     - *Yes/no inputs are switches*: an attack-listed IP, and, compared with the account's earlier logins, new
       country, region, city, network, IP address, device type, operating system, browser, exact user agent, and a
       country change within an hour. Also the device type and the time since the previous login.
@@ -49,6 +52,9 @@ Issue [#8](https://github.com/modsiw-mona/anomaly_detection_ato/issues/8) (CRISP
   back*; *Confirm it's you* with a code field; *Sign-in on hold* until they verify their identity), marked as a
   simulation, and below it what the system saw. Changing any input asks to log in again, so each response belongs
   to the attempt shown.
+- **Feedback at every step.** A hint under the card always says what to do next (press Log in; change the attempt
+  and log in again). A short notice confirms each login, another flags at once that the attempt changed, and the
+  button then reads *Log in again*.
 - **Guided tour.** *Take the guided tour* dims the page and highlights one part at a time (the kinds of record,
   the login attempt, the sign-in card, what the person sees, what the system saw), with Back, Next and Skip. It is
   plain CSS (a highlighted container above a dimmed page); a tiny script only scrolls the part into view.

@@ -9,12 +9,12 @@ system saw: the takeover score, how often such scores were takeovers, the thresh
 
 ## How to use it
 
-1. **Choose a kind of record:** a takeover the model blocks, a takeover it catches by asking for 2FA, a legitimate
-   login flagged by mistake, or an ordinary legitimate login; then a scenario: a returning account or an account's
-   first login. Each is a real test login.
-2. **Look at the login attempt** on the left: every control is one input the model receives. Sliders show where
-   takeovers and legitimate logins usually are; inputs that follow from others are greyed out (a new network is
-   always a new IP address, for example).
+1. **Pick a login:** the kind of record (a takeover the model blocks or asks for 2FA, a real user asked for 2FA
+   by mistake, a real user let in) and the account (one that had logged in before, or its first login). A card
+   shows the selected login at a glance. Each is a real test login.
+2. **Look at the login attempt** on the left: every control is one input the model receives. Each slider's "?"
+   says where takeovers and legitimate logins usually are; inputs that follow from others are greyed out (a new
+   network is always a new IP address, for example).
 3. **Press Log in.** The credentials are valid in every scenario, since a takeover uses the real password; only
    where and how the login happens can tell the owner from an attacker.
 4. **Change the attempt** and log in again to see how the response changes. **Back to the real login** undoes the

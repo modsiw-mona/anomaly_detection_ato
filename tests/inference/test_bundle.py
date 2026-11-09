@@ -59,8 +59,8 @@ def _pages(app: AppTest) -> dict[tuple[str, str], tuple[str, pd.DataFrame]]:
     pages = {}
     for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
         app.button(key=key).click().run()
-        for scenario in app.radio[0].options:
-            app.radio[0].set_value(scenario).run()
+        for scenario in [b.key for b in app.button if b.key and b.key.startswith("scenario-")]:
+            app.button(key=scenario).click().run()
             app.button(key="login").click().run()
             assert not app.exception, app.exception
             table: pd.DataFrame = app.table[0].value

@@ -9,7 +9,6 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 APP = Path(__file__).parents[2] / "notebooks" / "7-deploy" / "app.py"
-SCENARIO_LABELS = {"returning": "Returning account", "first": "First login of a new account"}
 NETWORK_SHARE, ACCOUNTS = "in-global_share_asn", "in-asn_prior_users"
 ATTACK_SHARE = "in-asn_prior_attack_share"
 NUMBER_INPUTS = 6  # sliders, each with where takeovers and legitimate logins usually are
@@ -28,12 +27,15 @@ def _choose(app: AppTest, scenario: str) -> bool:
     """Open the first kind of outcome that offers ``scenario``; False if none does."""
     for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
         app.button(key=key).click().run()
-        radio = app.radio[0]
-        if SCENARIO_LABELS[scenario] in radio.options:
-            radio.set_value(scenario).run()
+        if f"scenario-{scenario}" in _scenario_keys(app):
+            app.button(key=f"scenario-{scenario}").click().run()
             assert not app.exception, app.exception
             return True
     return False
+
+
+def _scenario_keys(app: AppTest) -> list[str]:
+    return [b.key for b in app.button if b.key and b.key.startswith("scenario-")]
 
 
 def _log_in(app: AppTest) -> AppTest:
@@ -191,12 +193,14 @@ def test_technical_terms_are_explained(data_dir: Path, monkeypatch: pytest.Monke
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
     assert all(s.help for s in app.select_slider if s.key != "in-gap"), "every number input"
-    assert "ASN (autonomous system number)" in app.select_slider(key=NETWORK_SHARE).help
+    assert "ASN, autonomous system number" in app.select_slider(key=NETWORK_SHARE).help
     for key in ("attack_ip", "new_asn", "new_user_agent"):
         assert app.toggle(key=f"in-{key}").help, key
     assert not app.toggle(key="in-new_city").help, "a plain switch needs no definition"
-    usual = [c.value for c in app.caption if c.value.startswith("Takeovers usually")]
-    assert len(usual) == NUMBER_INPUTS, "each number input says where its usual values are"
+    sliders = [s for s in app.select_slider if s.key != "in-gap"]
+    assert len(sliders) == NUMBER_INPUTS
+    assert all("Takeovers usually:" in s.help for s in sliders), "usual values, in the tooltip"
+    assert not [c for c in app.caption if "Takeovers usually" in c.value], "and not on the page"
 
 
 def test_the_score_is_put_in_context(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -235,9 +239,10 @@ def test_log_in_shows_the_screen_of_each_tier(
     seen = set()
     for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
         app.button(key=key).click().run()
-        for scenario in app.radio[0].options:
-            app.radio[0].set_value(scenario).run()
-            assert not app.metric, "a new attempt starts on the sign-in card"
+        for scenario in _scenario_keys(app):
+            app.button(key=scenario).click().run()
+            assert not app.metric, "a new login starts on the sign-in card"
+            assert any("press **Log in**" in i.value for i in app.info), "the next step is said"
             _log_in(app)
             tier = _table(app).iloc[-1]["with your changes"].split("(")[1].rstrip(")")
             expected = {"block": "block", "ask for 2FA": "2fa", "allow": "allow"}[tier]
@@ -351,3 +356,25 @@ def test_the_guided_tour_highlights_each_part(
     assert _highlighted(app) == "kinds"
     app.button(key="tour-skip").click().run()
     assert not [b for b in app.button if b.key == "tour-next"], "Skip closes the tour"
+
+
+def test_the_selected_login_is_shown_at_a_glance(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _open(data_dir, monkeypatch)
+    page = " ".join(m.value for m in app.markdown)
+    assert "The selected login" in page
+    assert "A takeover" in page or "The real user" in page, "what really happened"
+
+
+def test_each_step_gives_feedback(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A notice confirms the login, the hint says what to do next, and a change is flagged at once."""
+    app = _open(data_dir, monkeypatch)
+    assert _choose(app, "returning")
+    assert app.button(key="login").label == "Log in"
+    _log_in(app)
+    assert any("Login checked" in t.value for t in app.toast)
+    assert any(i.value.startswith("Next: change anything") for i in app.info)
+    _change(app, "attack switch")
+    assert any("attempt changed" in t.value for t in app.toast)
+    assert app.button(key="login").label == "Log in again"
