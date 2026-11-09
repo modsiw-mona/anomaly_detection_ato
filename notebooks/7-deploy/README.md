@@ -73,7 +73,7 @@ inputs. Far from the logins it learned from, its answer rests on less evidence; 
 combinations the data never allows out of reach.
 
 **Why not a form or a CSV upload?** A common demo design scores one row typed in a form, or a batch from a
-CSV. Here a login's features describe it *against the account's history and all earlier traffic* (novelty, rarity,
+CSV. Here a login's features describe it *against the account's history and all earlier traffic* (novelty, global frequency,
 network reputation), so a raw login cannot be typed in. The demo therefore starts from real logins the model never
 saw and lets you change their inputs, with the usual values beside each one.
 

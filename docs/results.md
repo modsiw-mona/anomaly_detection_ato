@@ -48,7 +48,7 @@ riskiest 0.1%, a second factor up to 1%. The per-user view of this friction is o
 
 ![SHAP importance of the main features](assets/img/rba_shap_importance.png)
 
-In order: the **global rarity** of the login's values (network, country, browser), then **attacker
+In order: the **global frequency** of the login's values (how rare they are among all earlier logins) (network, country, browser), then **attacker
 infrastructure** (recent activity and attack-IP history of the network, a user agent shared across accounts,
 accounts already seen on the network), then device type, dormancy, novelty for the account and impossible travel.
 The model is driven more by *where a login comes from* than by whether it is new for the account: on the

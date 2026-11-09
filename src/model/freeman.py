@@ -32,7 +32,8 @@ whole timeline, like the behavioural features; the score is returned as ``log(ri
 import polars as pl
 
 from data.datasets import DatasetConfig
-from data.features import EVENT_ID, SUCCESS, TIME, USER, real_account_attempts
+from data.features import SUCCESS, TIME, USER, real_account_attempts
+from data.intermediate import EVENT_ID
 
 # Weights of the reference implementation for this dataset (das-group/rba-algorithm).
 HIERARCHY: dict[str, dict[str, float]] = {

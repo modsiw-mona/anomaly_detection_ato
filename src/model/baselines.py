@@ -21,7 +21,8 @@ import polars as pl
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-from data.features import EVENT_ID, LABEL, feature_columns
+from data.features import LABEL, feature_columns
+from data.intermediate import EVENT_ID
 from model.preprocessing import build_preprocessor, to_model_frame
 
 FloatArray = np.typing.NDArray[np.float64]
