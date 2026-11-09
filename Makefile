@@ -1,4 +1,4 @@
-.PHONY: data intermediate features split demo notebooks_run tests help init_env init_git pre-commit_update docs_view docs_test test check
+.PHONY: install_env data intermediate features split demo notebooks_run test test_verbose test_coverage docs docs_test clean_env switch_main clean_branchs check lint help pre-commit_update
 
 ####----Basic configurations----####
 
@@ -9,21 +9,6 @@ install_env: ## Install libs with UV and pre-commit
 	uv run pre-commit install
 	@echo "Activate virtual environment..."
 	@bash -c "source .venv/bin/activate"
-
-init_git: ## Initialize git repository
-	@echo "Initializing local git repository..."
-	git init -b main
-	git add .
-	git commit -m "Initial commit"
-	@echo "Local Git already set!"
-
-####----Install Libraries----####
-
-install_data_libs: ## Install pandas, scikit-learn, Jupyter, seaborn
-	@echo "Installing data science libraries..."
-	uv add "pandas[parquet]" numpy scipy scikit-learn
-	@echo "Installing Jupyter, matplotlib and seaborn in dev..."
-	uv add jupyter matplotlib seaborn --group dev
 
 data: ## Download, verify and extract the raw dataset (DATASET=rba by default)
 	@echo "Downloading dataset $(or $(DATASET),rba)..."
@@ -103,13 +88,14 @@ clean_branchs: ## Clean local branches already merged on the remote
 	done
 
 ####----Checks----####
-check: ## Run code quality tools with pre-commit hooks.
+check: ## Run all pre-commit hooks on all files (the same gate as CI)
 	@echo "Linting, formating and Static type checking code: Running pre-commit"
 	@uv run pre-commit run -a
 
-lint: ## Run code quality tools with pre-commit hooks.
-	@echo "Linting, formating and Static type checking code: Running pre-commit"
-	@uv run pre-commit run ruff
+lint: ## Run ruff only (lint and format) on all files
+	@echo "Linting and formatting code: Running ruff"
+	@uv run pre-commit run ruff-check -a
+	@uv run pre-commit run ruff-format -a
 
 ####----Project----####
 help:
