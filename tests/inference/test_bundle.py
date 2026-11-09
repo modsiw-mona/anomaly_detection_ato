@@ -1,7 +1,10 @@
 """The demo bundle: built from the data, written and read back unchanged, fetched only with matching SHA-256."""
 
+import io
 import json
 import shutil
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pandas as pd
@@ -9,6 +12,7 @@ import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+from inference import bundle as bundle_module
 from inference.bundle import NUMBER_INPUTS, DemoBundle, build_bundle, fetch, manifest, sha256
 
 APP = Path(__file__).parents[2] / "notebooks" / "7-deploy" / "app.py"
@@ -170,3 +174,56 @@ def test_the_deployment_pins_the_libraries_the_model_was_saved_with() -> None:
         if "==" in line and not line.startswith("#")
     )
     assert {name: pins[name] for name in saved_with} == saved_with
+
+
+class _Flaky:
+    """Stands in for ``urlopen``: fails with the given HTTP codes first, then serves the local file."""
+
+    def __init__(self, codes: list[int]) -> None:
+        self.codes, self.calls = codes, 0
+
+    def __call__(self, url: str, timeout: float) -> io.BytesIO:
+        self.calls += 1
+        if self.calls <= len(self.codes):
+            raise urllib.error.HTTPError(url, self.codes[self.calls - 1], "error", {}, None)  # type: ignore[arg-type]
+        return io.BytesIO(
+            Path(urllib.request.url2pathname(url.removeprefix("file://"))).read_bytes()
+        )
+
+
+def _one_file_record(bundle_dir: Path) -> dict[str, object]:
+    return manifest([bundle_dir / "summary.json"], bundle_dir.as_uri() + "/", "test")
+
+
+def test_fetch_retries_temporary_server_errors(
+    bundle_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flaky, waits = _Flaky([504, 503]), list[float]()
+    monkeypatch.setattr(bundle_module.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(bundle_module.time, "sleep", waits.append)
+    folder = fetch(_one_file_record(bundle_dir), cache=tmp_path)
+    assert sha256(folder / "summary.json") == sha256(bundle_dir / "summary.json")
+    assert flaky.calls == len(flaky.codes) + 1, "two failures, then the file"
+    assert waits == list(bundle_module.RETRY_WAITS[:2]), "growing waits between attempts"
+
+
+def test_fetch_gives_up_after_the_last_retry(
+    bundle_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flaky = _Flaky([504] * 10)
+    monkeypatch.setattr(bundle_module.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(bundle_module.time, "sleep", lambda _: None)
+    with pytest.raises(urllib.error.HTTPError, match="504"):
+        fetch(_one_file_record(bundle_dir), cache=tmp_path)
+    assert flaky.calls == len(bundle_module.RETRY_WAITS) + 1
+
+
+def test_fetch_does_not_retry_a_missing_file(
+    bundle_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flaky = _Flaky([404])
+    monkeypatch.setattr(bundle_module.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(bundle_module.time, "sleep", lambda _: None)
+    with pytest.raises(urllib.error.HTTPError, match="404"):
+        fetch(_one_file_record(bundle_dir), cache=tmp_path)
+    assert flaky.calls == 1

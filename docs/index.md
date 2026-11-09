@@ -40,8 +40,8 @@ flowchart LR
   activity around it, impossible travel. See [Method](method.md).
 * **Evaluation:** users are split once into development (80%) and test (20%); every choice is made on development
   users, and the test users are scored at the end. See [Results](results.md).
-* **Demo:** a local web app that scores real test logins and lets you change any input to see how the score moves.
-  See [Demo](demo.md).
+* **Demo:** a web app that scores real test logins and lets you change any input to see how the score moves.
+  **[Open the live demo](https://anomalydetection-ato.streamlit.app)**, or see [Demo](demo.md).
 
 ## Where to go next
 

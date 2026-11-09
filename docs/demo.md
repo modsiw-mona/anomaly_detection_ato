@@ -1,5 +1,7 @@
 # Demo
 
+**Live:** <https://anomalydetection-ato.streamlit.app> (the first visit may take a minute while the app wakes up and downloads its files).
+
 A small web app ([Streamlit](https://streamlit.io/)) that puts the model in front of a person: pick a kind of
 authentication record, see a real test login of that kind, then change any of its inputs and watch the score, the
 response and its explanation change.
@@ -31,7 +33,7 @@ and the last row turns green as the score falls from 0.0300 to 0.0100 (still ask
 
 ## Run it
 
-The public version runs on Streamlit Community Cloud from a small published bundle (the eight example logins,
+The [public version](https://anomalydetection-ato.streamlit.app) runs on Streamlit Community Cloud from a small published bundle (the eight example logins,
 the reference sample, the summaries and the model, each checked against its SHA-256 before it is loaded).
 
 On your machine, after building the data and the model (see [Reproduce](reproduce.md)):
