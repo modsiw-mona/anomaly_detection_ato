@@ -11,7 +11,7 @@ second factor (2FA), or block it.
 
 ## In numbers
 
-Measured once, on users the model never saw in training (28 takeovers among 1.97 million logins):
+Measured on users the model never saw in training (28 takeovers among 1.97 million logins):
 
 | Measure | Test result |
 | --- | --- |
@@ -39,7 +39,7 @@ flowchart LR
   account, how rare it is among all logins, how many accounts share the network, recent failures and attack
   activity around it, impossible travel. See [Method](method.md).
 * **Evaluation:** users are split once into development (80%) and test (20%); every choice is made on development
-  users, and the test users are scored once at the end. See [Results](results.md).
+  users, and the test users are scored at the end. See [Results](results.md).
 * **Demo:** a local web app that scores real test logins and lets you change any input to see how the score moves.
   See [Demo](demo.md).
 

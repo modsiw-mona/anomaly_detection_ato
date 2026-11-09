@@ -15,7 +15,7 @@ response and its explanation change.
    legitimate logins usually are; inputs that follow from others are greyed out (a new network is always a new IP
    address, for example). **Back to the real login** undoes the changes.
 5. **Compare in the table:** each input's real value next to yours, and how much it raises or lowers the score (tree
-   SHAP contributions, which add up to the score).
+   SHAP contributions, which, added to a typical ordinary login's score, give this login's score).
 
 ## Screenshots
 
@@ -26,8 +26,8 @@ attack-IP history, from a rare country and browser: score 0.59, block.
 
 ![A takeover asked for 2FA, its attack-listed IP switched off](https://raw.githubusercontent.com/modsiw-mona/anomaly_detection_ato/main/notebooks/7-deploy/screenshots/03-attack-ip-off.png)
 
-**Changing one input.** The same kind of takeover with its attack-listed IP switched off: only that row changes, and
-the last row turns green as the score falls.
+**Changing one input.** A takeover asked for 2FA, with its attack-listed IP switched off: only that row changes,
+and the last row turns green as the score falls from 0.0300 to 0.0100 (still ask for 2FA).
 
 ## Run it
 

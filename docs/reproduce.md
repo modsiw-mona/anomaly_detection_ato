@@ -1,6 +1,6 @@
 # Reproduce
 
-Everything runs on a laptop (developed on a 16 GB Apple M1 Pro), with no cloud services and no credentials. The
+Everything runs on a laptop (developed on a 16 GB laptop), with no cloud services and no credentials. The
 dataset is downloaded from its official source and verified; nothing is uploaded anywhere.
 
 ## Set up
@@ -48,7 +48,7 @@ make demo
 
 ```bash
 make test    # pytest with coverage, on toy data (no download needed)
-make check   # every pre-commit hook: ruff, mypy, secret scanning, conventional commits
+make check   # ruff, mypy, secret scanning and file checks (commit messages are checked when committing)
 ```
 
 Another login dataset can be used by writing its column mapping in `conf/dataset/<name>.yaml`

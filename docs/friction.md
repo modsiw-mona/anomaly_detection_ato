@@ -34,8 +34,8 @@ comparison uses **returning logins**, the same ones for both models:
 
 To detect 80% to 100% of the test takeovers, the Freeman model asks **51% to 100% of users** at least once, and its
 median user re-authenticates on 5% to 100% of their logins. The selected model asks **at most 0.3%** of users. The
-development side agrees up to 90% detection (Freeman: 58% to 85% of users); at 94% both reach almost everyone, because
-the last few development takeovers score exactly 0, like 98% of legitimate logins. This is the direction Rotter et
+development side agrees up to 90% detection (Freeman: 58% to 85% of users); at 94% both reach almost everyone (the selected
+model because the last few development takeovers score exactly 0, like 98% of legitimate logins). This is the direction Rotter et
 al. report as well: a learned model clearly beats Freeman's on this dataset.
 
 ## Who carries the friction
@@ -44,7 +44,7 @@ At the 2FA tier, the share of each user's logins that is challenged is similar w
 1.3%), but users with many logins have more chances to be asked once: 1.3% of users with a single login, 18.7% of
 those with 40 or more. **First logins are 28% of legitimate logins but 40% of the 2FA requests.** Part of that is the
 dataset: the log starts in February 2020, so accounts that already existed look new at first (52% of the logins that
-month are "first logins", against about 19% by October). See [Limitations](limitations.md).
+month are "first logins", against 18% in October). See [Limitations](limitations.md).
 
 The full analysis, with bootstrap intervals and the travel-window check, is in
 [notebook 08](https://github.com/modsiw-mona/anomaly_detection_ato/blob/main/notebooks/6-interpretation/08-sap-user_friction-2026_11_08.ipynb).

@@ -1,7 +1,14 @@
 # Results
 
-The selected model was refitted on all development users and scored the **test side once**: 553,756 users,
-1,971,980 successful logins, 28 takeovers. Nothing was tuned after that measurement.
+The selected model was refitted on all development users and scored the **test side**: 553,756 users, 1,971,980
+successful logins, 28 takeovers. Nothing was tuned after that measurement.
+
+!!! note "One earlier test run"
+    An earlier run, before a preprocessing bug was fixed (networks never seen before were imputed as clean), scored a
+    different model on the test side: LightGBM with the `campaign` and `travel` features, PR-AUC 0.606 (0.434 to
+    0.765). The bug was found in code review; model selection was then re-run on development data only, with the
+    selection rule coded before the run, and chose the random forest. The earlier test result was known at that
+    point, but no test number entered the choice (notebook 07).
 
 ## The final measurement
 
@@ -44,8 +51,9 @@ riskiest 0.1%, a second factor up to 1%. The per-user view of this friction is o
 In order: the **global rarity** of the login's values (network, country, browser), then **attacker
 infrastructure** (recent activity and attack-IP history of the network, a user agent shared across accounts,
 accounts already seen on the network), then device type, dormancy, novelty for the account and impossible travel.
-The model is driven more by *where a login comes from* than by whether it is new for the account: 43% of legitimate
-returning logins bring some new signal for the account, against 86% of takeovers.
+The model is driven more by *where a login comes from* than by whether it is new for the account: on the
+development side, 43% of legitimate returning logins bring some new signal for the account, against 86% of the 71
+returning takeovers.
 
 ## Where it fails
 
@@ -65,6 +73,9 @@ features in real time was not measured.
 
 ## Answer to the thesis objectives
 
-These results answer objective 4 (recall, precision, PR-AUC, thresholds and error analysis); the selection above
-answers objective 3, and the features objective 2. Details and every intermediate result are in the notebooks of
+The thesis has four specific objectives: characterise the dataset (1), build behavioural and anomaly features (2),
+implement and compare supervised models that handle the imbalance (3), and evaluate the final model and build a
+prototype (4). These results answer objective 4 (recall, precision, PR-AUC, thresholds and error analysis); the
+[model selection](method.md#model-selection) answers objective 3, and the [features](method.md#features-only-the-past)
+objective 2. Details and every intermediate result are in the notebooks of
 [issues #1 to #8](https://github.com/modsiw-mona/anomaly_detection_ato/tree/main/notebooks).
