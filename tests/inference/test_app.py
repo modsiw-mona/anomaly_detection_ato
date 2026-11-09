@@ -81,7 +81,9 @@ def test_demo_scores_a_login_and_reacts_to_its_inputs(
     app = _open(data_dir, monkeypatch)
     assert app.metric[0].label == "Takeover score"
     assert not app.metric[0].delta, "the real login, before any change, is not 'changed'"
-    assert any("How to use it" in m.value for m in app.markdown), "the page explains itself"
+    intro = " ".join(m.value for m in app.markdown)
+    assert "How to use it" in intro, "the page explains itself"
+    assert "github.com/modsiw-mona/anomaly_detection_ato" in intro, "and links its code"
     assert _choose(app, "returning")
     before = app.metric[0].value
     attack = app.toggle(key="in-attack_ip")
