@@ -21,7 +21,7 @@ import polars as pl
 
 from data.datasets import DatasetConfig, find_repo_root, load_dataset_config
 from data.features import LABEL, USER, features_path
-from data.intermediate import EVENT_ID
+from data.intermediate import EVENT_ID, Check, publish
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +81,17 @@ def load_side(config: DatasetConfig, data_dir: Path, side: str) -> pl.LazyFrame:
     )
 
 
-def write_split(config: DatasetConfig, data_dir: Path) -> Path:
-    """Compute the split from the feature table and write it."""
+def write_split(config: DatasetConfig, data_dir: Path, *, check: Check | None = None) -> Path:
+    """Compute the split from the feature table and write it.
+
+    Written to ``.part`` and renamed once complete and accepted by ``check``, if given
+    (:func:`data.intermediate.publish`).
+    """
     out = split_path(config, data_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
-    assign_split(pl.scan_parquet(features_path(config, data_dir))).write_parquet(out)
+    partial = out.with_name(out.name + ".part")
+    assign_split(pl.scan_parquet(features_path(config, data_dir))).write_parquet(partial)
+    publish(partial, out, check)
     logger.info("Wrote %s", out.name)
     return out
 

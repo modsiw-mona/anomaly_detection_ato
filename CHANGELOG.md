@@ -45,6 +45,10 @@ to its pull request.
   flow, block), feedback at every step and a guided tour.
   ([#46](https://github.com/modsiw-mona/anomaly_detection_ato/pull/46))
 - A changelog entry in the pull request checklist.
+- Feature pipeline (`make feature_pipeline`): download, intermediate dataset, features and split in order,
+  validating each output with Pandera before the next step (new schemas for the feature table and the split),
+  a drift check between the development and test sides, and a report per run.
+  ([#51](https://github.com/modsiw-mona/anomaly_detection_ato/pull/51))
 
 ### Changed
 

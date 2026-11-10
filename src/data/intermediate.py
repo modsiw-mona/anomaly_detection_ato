@@ -23,6 +23,7 @@ Usage::
 import argparse
 import ipaddress
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -128,20 +129,41 @@ def standardise(raw: pl.LazyFrame, config: DatasetConfig) -> pl.LazyFrame:
     return frame.with_columns(_typed(f, config) for f in fields)
 
 
+Check = Callable[[Path], object]
+
+
+def publish(partial: Path, out_file: Path, check: Check | None = None) -> None:
+    """Rename a finished ``partial`` file to ``out_file``, after ``check`` (if any) accepts it.
+
+    If ``check`` raises, the partial file is removed and ``out_file`` is left as it was, so a
+    rejected rebuild never replaces a good output.
+    """
+    if check is not None:
+        try:
+            check(partial)
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            raise
+    partial.replace(out_file)
+
+
 def intermediate_path(config: DatasetConfig, data_dir: Path) -> Path:
     """Where the intermediate parquet for ``config`` lives."""
     return data_dir / "02_intermediate" / f"{config.name}.parquet"
 
 
-def build_intermediate(config: DatasetConfig, raw_file: Path, out_file: Path) -> Path:
+def build_intermediate(
+    config: DatasetConfig, raw_file: Path, out_file: Path, *, check: Check | None = None
+) -> Path:
     """Stream ``raw_file`` through :func:`standardise` into a zstd-compressed parquet file.
 
-    The file is written to ``<out_file>.part`` and renamed only when complete.
+    The file is written to ``<out_file>.part`` and renamed only when complete and, if ``check`` is
+    given, only after ``check`` accepts it (see :func:`publish`).
     """
     out_file.parent.mkdir(parents=True, exist_ok=True)
     partial = out_file.with_name(out_file.name + ".part")
     standardise(scan_raw(raw_file), config).sink_parquet(partial, compression="zstd")
-    partial.replace(out_file)
+    publish(partial, out_file, check)
     logger.info("Wrote %s", out_file.name)
     return out_file
 
