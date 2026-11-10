@@ -18,6 +18,7 @@ def _scores(rows: list[dict[str, Any]]) -> dict[int, float | None]:
 
 
 def test_hand_computed_scores() -> None:
+    """Freeman scores match hand-computed values; first logins get no score."""
     rows = [
         {"user_id": 1, "timestamp": at(0), "login_success": True, **SAME},
         {"user_id": 2, "timestamp": at(1), "login_success": True, **SAME},
@@ -36,6 +37,7 @@ def test_hand_computed_scores() -> None:
 
 
 def test_unusual_login_scores_higher_than_a_habitual_one() -> None:
+    """A login with unseen values scores higher than one that repeats the user's habits."""
     history = [{"user_id": 1, "timestamp": at(i), "login_success": True, **SAME} for i in range(5)]
     habitual = {"user_id": 1, "timestamp": at(10), "login_success": True, **SAME}
     unusual = {**habitual, "ip": "z", "asn": "z", "country": "z", "user_agent": "z", "browser": "z"}
@@ -49,6 +51,7 @@ def test_unusual_login_scores_higher_than_a_habitual_one() -> None:
 
 
 def test_failed_attempts_and_catch_all_are_not_scored_or_counted() -> None:
+    """Failed attempts and catch-all logins get no score."""
     rows = [
         {"user_id": 1, "timestamp": at(0), "login_success": True, **SAME},
         {"user_id": 1, "timestamp": at(1), "login_success": False, **SAME},
@@ -63,6 +66,7 @@ def test_failed_attempts_and_catch_all_are_not_scored_or_counted() -> None:
 
 @pytest.mark.parametrize("seed", [0, 1])
 def test_score_uses_no_information_from_the_future(seed: int) -> None:
+    """The score of a login is the same when every later event is removed."""
     events = _random_events(150, seed)
     config = _config()
     full = freeman_scores(_events(events), config).collect()

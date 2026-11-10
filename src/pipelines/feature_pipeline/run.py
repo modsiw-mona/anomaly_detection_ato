@@ -55,7 +55,15 @@ class DriftError(RuntimeError):
 
 
 def report_path(config: DatasetConfig, data_dir: Path) -> Path:
-    """Where the report of a feature pipeline run for ``config`` lives."""
+    """Where the report of a feature pipeline run for ``config`` lives.
+
+    Args:
+        config: Dataset configuration; its ``name`` names the report file.
+        data_dir: The repository's ``data`` folder.
+
+    Returns:
+        ``<data_dir>/08_reporting/<dataset>_feature_pipeline.json``.
+    """
     return data_dir / "08_reporting" / f"{config.name}_feature_pipeline.json"
 
 
@@ -187,11 +195,30 @@ def run(
     """Run (or, with ``validate_only``, only check) the feature pipeline; return its report.
 
     A rebuilt output replaces the previous one only after it passes its validation, so a failed run
-    leaves the earlier outputs in place.
+    leaves the earlier outputs in place. The report is written to :func:`report_path` whether the
+    run passes or fails; any error of a step is recorded in it (with the step's name) and raised
+    again.
+
+    Args:
+        config: Dataset configuration (source, column mapping and rules).
+        data_dir: The repository's ``data`` folder; each step reads and writes its stage subfolder.
+        validate_only: If True, only check the existing intermediate dataset, feature table and
+            split, and the drift between the sides, without downloading or rebuilding anything.
+            If False (the default), run every step.
+        drift_limit: Drift score at or above which a feature stops the pipeline; defaults to
+            ``data.drift.DRIFT_LIMIT``.
+
+    Returns:
+        The run report: ``dataset``, ``started`` (UTC, ISO 8601), ``validate_only``, ``status``
+        (``passed``), ``steps`` (per step its name, ``seconds``, ``output`` file and what its
+        validation found, such as ``rows`` and ``warnings``) and ``drift`` (one row per feature).
 
     Raises:
         pandera.errors.SchemaErrors: If an output breaks a validation rule.
         DriftError: If a feature drifts between the two sides by ``drift_limit`` or more.
+        IntegrityError, UnsafeArchiveError: If the raw download fails its checksum or the archive
+            is unsafe (see :func:`data.download.download_dataset`); any other error of a step is
+            raised the same way, after it is recorded in the report.
     """
     report: dict[str, Any] = {
         "dataset": config.name,
@@ -228,7 +255,18 @@ def _summary(errors: SchemaErrors) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point."""
+    """Command-line entry point.
+
+    Reads ``--dataset`` (default ``rba``) and ``--validate-only``, runs :func:`run` on the
+    repository's ``data`` folder and, on success, prints the path of the report.
+
+    Args:
+        argv: Command-line arguments; None reads them from sys.argv.
+
+    Returns:
+        0 if the pipeline passed; 1 if an output broke a validation rule or a feature drifted
+        (the reason is logged as an error).
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     parser.add_argument(

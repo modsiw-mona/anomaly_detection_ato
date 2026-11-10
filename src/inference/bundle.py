@@ -72,7 +72,12 @@ class DemoBundle:
     score_bins: list[tuple[float, float, int, int]]  # (low, high, logins, takeovers)
 
     def picks(self) -> dict[str, dict[str, pl.DataFrame]]:
-        """Scenario logins by kind and scenario name, each a one-row frame, in the stored order."""
+        """Scenario logins by kind and scenario name, each a one-row frame, in the stored order.
+
+        Returns:
+            Per kind of outcome, per scenario name (``returning`` or ``first``), the login as a
+            one-row frame without the ``kind`` and ``scenario`` columns.
+        """
         result: dict[str, dict[str, pl.DataFrame]] = {}
         for i in range(self.scenarios.height):
             row = self.scenarios[i]
@@ -81,7 +86,14 @@ class DemoBundle:
         return result
 
     def write(self, folder: Path) -> list[Path]:
-        """Write the bundle's three files into ``folder``."""
+        """Write the bundle's three files into ``folder``.
+
+        Args:
+            folder: Destination folder; created if missing. Existing files are overwritten.
+
+        Returns:
+            The paths written: the scenarios and reference parquet files, then the JSON summary.
+        """
         folder.mkdir(parents=True, exist_ok=True)
         self.scenarios.write_parquet(folder / SCENARIOS)
         self.reference.write_parquet(folder / REFERENCE)
@@ -98,7 +110,14 @@ class DemoBundle:
 
     @classmethod
     def read(cls, folder: Path) -> DemoBundle:
-        """Read a bundle written by :meth:`write`."""
+        """Read a bundle written by :meth:`write`.
+
+        Args:
+            folder: Folder holding the bundle's three files.
+
+        Returns:
+            The bundle.
+        """
         summary: dict[str, Any] = json.loads((folder / SUMMARY).read_text())
         return cls(
             thresholds={k: float(v) for k, v in summary["thresholds"].items()},
@@ -118,7 +137,18 @@ class DemoBundle:
 
 
 def kinds(logins: pl.DataFrame, thresholds: Mapping[str, float]) -> dict[str, pl.DataFrame]:
-    """Test-side logins grouped by ground truth and response tier, keyed by slug (empty ones left out)."""
+    """Test-side logins grouped by ground truth and response tier, keyed by slug (empty ones left out).
+
+    Args:
+        logins: Logins with ``label_ato`` and their ``score``.
+        thresholds: Score threshold of each tier; must hold the ``review / block`` and ``step-up``
+            tiers.
+
+    Returns:
+        The non-empty groups among ``block``, ``2fa`` and ``missed`` (takeovers by tier), and
+        ``false-alarm`` and ``ordinary`` (legitimate logins at or above, and below, the step-up
+        threshold).
+    """
     score, takeover = pl.col("score"), pl.col("label_ato")
     block, step_up = thresholds[TIER_BLOCK], thresholds[TIER_STEP_UP]
     groups = {
@@ -132,7 +162,15 @@ def kinds(logins: pl.DataFrame, thresholds: Mapping[str, float]) -> dict[str, pl
 
 
 def representative(pool: pl.DataFrame) -> dict[str, pl.DataFrame]:
-    """The median-score returning-account login and first login of a group (ties: fixed order)."""
+    """The median-score returning-account login and first login of a group (ties: fixed order).
+
+    Args:
+        pool: Logins of one group with ``score``, ``prior_successes`` and ``event_id``.
+
+    Returns:
+        ``returning`` and ``first``, each a one-row frame; a scenario with no login in ``pool`` is
+        left out.
+    """
     first = pl.col("prior_successes") == 0
     picks = {}
     for name, frame in (("returning", pool.filter(~first)), ("first", pool.filter(first))):
@@ -180,8 +218,24 @@ def build_bundle(
     devices: Sequence[str] = DEVICES,
     detector: Detector | None = None,
 ) -> DemoBundle:
-    """Build the bundle from the full data: the test side with its saved scores (issue #7) and the
-    development side with its out-of-fold scores (issue #6)."""
+    """Build the bundle from the full data.
+
+    It uses the test side with its saved scores (issue #7) and the development side with its
+    out-of-fold scores (issue #6).
+
+    Args:
+        data_dir: Root of the data folders (``05_model_input``, ``06_models``,
+            ``07_model_output``...).
+        dataset: Dataset name, as in the file names.
+        number_inputs: Number inputs whose usual values among takeovers and legitimate logins are
+            kept.
+        devices: Device types whose typical global share is kept.
+        detector: The detector whose thresholds define the tiers; None loads the saved one with
+            :meth:`Detector.load`.
+
+    Returns:
+        The bundle.
+    """
     det = detector or Detector.load(data_dir, dataset)
     config = load_dataset_config(dataset)
     outputs = data_dir / "07_model_output"
@@ -228,6 +282,14 @@ def build_bundle(
 
 
 def sha256(path: Path) -> str:
+    """SHA-256 of a file, read in 1 MiB blocks.
+
+    Args:
+        path: The file.
+
+    Returns:
+        The digest as lowercase hexadecimal.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
@@ -242,9 +304,21 @@ PICKLE_LIBRARIES = (
 
 
 def manifest(files: Sequence[Path], base_url: str, release: str) -> dict[str, Any]:
-    """The record committed to the repository: where the published files are, their SHA-256, and the library
-    versions the model file was saved with (the deployment must pin the same ones). They are read from the
-    exporting environment, so export with the one the model was trained in."""
+    """The record committed to the repository.
+
+    It holds where the published files are, their SHA-256, and the library versions the model file
+    was saved with (the deployment must pin the same ones). The versions are read from the
+    exporting environment, so export with the one the model was trained in.
+
+    Args:
+        files: The published files.
+        base_url: URL of the folder the files are published under.
+        release: Name of the release; a plain name, it also names the download folder.
+
+    Returns:
+        ``release``, ``base_url``, ``saved_with`` (library name to version) and ``files`` (file
+        name to SHA-256), ready to be written as JSON.
+    """
     return {
         "release": release,
         "base_url": base_url,
@@ -301,6 +375,20 @@ def fetch(record: Mapping[str, Any], cache: Path | None = None) -> Path:
     so no other user of the machine can swap a file between the check and the load; the model file is a
     pickle, so it must never be loaded unverified. With ``cache`` (a folder the caller owns), a file already
     there is reused only if its SHA-256 still matches. File and release names must be plain names.
+
+    Args:
+        record: The manifest (see :func:`manifest`): ``release``, ``base_url`` and ``files``.
+        cache: Folder to keep downloads in, under a subfolder per release; None means a new private
+            temporary folder.
+
+    Returns:
+        The folder holding the verified files.
+
+    Raises:
+        ValueError: If a file or release name is not a plain name, a URL scheme is not allowed, a
+            file is too large, or a file does not match its SHA-256.
+        urllib.error.URLError, TimeoutError, ConnectionError: If a download fails and the failure
+            is not temporary (for example HTTP 404), or it still fails after the retries.
     """
     release = _safe(record["release"])
     folder = (cache / release) if cache else Path(tempfile.mkdtemp(prefix=f"ato-demo-{release}-"))
@@ -320,7 +408,15 @@ def fetch(record: Mapping[str, Any], cache: Path | None = None) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Export the bundle and the model files for publishing, and print the manifest to commit."""
+    """Export the bundle and the model files for publishing, and write the manifest to commit.
+
+    Args:
+        argv: Command-line arguments (``--dataset``, ``--data-dir``, ``--out``, ``--release``,
+            ``--base-url``, ``--manifest``); None reads them from ``sys.argv``.
+
+    Returns:
+        The exit status, 0 on success.
+    """
     import argparse  # noqa: PLC0415
     import shutil  # noqa: PLC0415
 

@@ -73,6 +73,9 @@ to its pull request.
 - The `actionlint` job downloads a pinned release and checks its SHA-256, instead of running a script from the
   tool's default branch. ([#40](https://github.com/modsiw-mona/anomaly_detection_ato/pull/40))
 - mypy runs in full strict mode. ([#45](https://github.com/modsiw-mona/anomaly_detection_ato/pull/45))
+- Google-style docstrings (`Args:`, `Returns:`, `Raises:`) for every public function in `src/` and a one-line
+  docstring for every test, enforced by ruff's pydocstyle rules.
+  ([#56](https://github.com/modsiw-mona/anomaly_detection_ato/pull/56))
 
 ### Removed
 

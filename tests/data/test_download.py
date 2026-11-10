@@ -48,12 +48,14 @@ def _zip(path: Path, entries: dict[str | zipfile.ZipInfo, bytes]) -> Path:
 
 
 def test_md5_of(tmp_path: Path) -> None:
+    """``md5_of`` returns the MD5 hex digest of a file's bytes."""
     file = tmp_path / "f.bin"
     file.write_bytes(CSV)
     assert md5_of(file) == _md5(CSV)
 
 
 def test_fetch_downloads_and_verifies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``fetch`` downloads once, verifies the checksum and leaves no partial file."""
     calls = _serve(monkeypatch, CSV)
     dest = fetch(URL, tmp_path / "toy.zip", _md5(CSV))
     assert dest.read_bytes() == CSV
@@ -62,6 +64,7 @@ def test_fetch_downloads_and_verifies(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_fetch_rejects_checksum_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A download with the wrong MD5 raises ``IntegrityError`` and leaves nothing on disk."""
     _serve(monkeypatch, b"tampered")
     with pytest.raises(IntegrityError, match="MD5 mismatch"):
         fetch(URL, tmp_path / "toy.zip", _md5(CSV))
@@ -71,6 +74,7 @@ def test_fetch_rejects_checksum_mismatch(tmp_path: Path, monkeypatch: pytest.Mon
 def test_fetch_skips_verified_existing_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``fetch`` makes no request when the file on disk already has the expected MD5."""
     calls = _serve(monkeypatch, b"should not be requested")
     dest = tmp_path / "toy.zip"
     dest.write_bytes(CSV)
@@ -81,6 +85,7 @@ def test_fetch_skips_verified_existing_file(
 def test_fetch_replaces_corrupt_existing_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``fetch`` downloads again over a file on disk whose MD5 does not match."""
     calls = _serve(monkeypatch, CSV)
     dest = tmp_path / "toy.zip"
     dest.write_bytes(b"truncated")
@@ -90,11 +95,13 @@ def test_fetch_replaces_corrupt_existing_file(
 
 
 def test_fetch_refuses_plain_http(tmp_path: Path) -> None:
+    """``fetch`` refuses a non-https URL."""
     with pytest.raises(ValueError, match="non-https"):
         fetch("http://example.org/toy.zip", tmp_path / "toy.zip", _md5(CSV))
 
 
 def test_extract_member_flattens_and_is_idempotent(tmp_path: Path) -> None:
+    """``extract_member`` writes the member flat in the output folder and never rewrites it."""
     archive = _zip(tmp_path / "a.zip", {"nested/toy.csv": CSV, "README.txt": b"hi"})
     out_dir = tmp_path / "raw"
     out_dir.mkdir()
@@ -125,30 +132,35 @@ def _symlink_entry() -> zipfile.ZipInfo:
 def test_unsafe_entries_are_rejected(
     tmp_path: Path, entry: str | zipfile.ZipInfo, match: str
 ) -> None:
+    """``check_archive`` rejects parent-directory, absolute-path and symbolic-link entries."""
     archive = _zip(tmp_path / "a.zip", {"toy.csv": CSV, entry: b"x"})
     with pytest.raises(UnsafeArchiveError, match=match):
         check_archive(archive, "toy.csv", 10_000)
 
 
 def test_zip_bomb_is_rejected(tmp_path: Path) -> None:
+    """``check_archive`` rejects a member with a suspicious compression ratio (a zip bomb)."""
     archive = _zip(tmp_path / "a.zip", {"toy.csv": b"\0" * 5_000_000})
     with pytest.raises(UnsafeArchiveError, match="compression ratio"):
         check_archive(archive, "toy.csv", 10_000_000)
 
 
 def test_oversized_archive_is_rejected(tmp_path: Path) -> None:
+    """``check_archive`` rejects an archive whose uncompressed size exceeds the limit."""
     archive = _zip(tmp_path / "a.zip", {"toy.csv": CSV})
     with pytest.raises(UnsafeArchiveError, match="limit"):
         check_archive(archive, "toy.csv", len(CSV) - 1)
 
 
 def test_missing_member_is_rejected(tmp_path: Path) -> None:
+    """``check_archive`` rejects an archive that lacks the expected member."""
     archive = _zip(tmp_path / "a.zip", {"other.csv": CSV})
     with pytest.raises(UnsafeArchiveError, match="not in archive"):
         check_archive(archive, "toy.csv", 10_000)
 
 
 def test_download_dataset_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``download_dataset`` downloads, verifies and extracts the configured member."""
     payload = _zip(tmp_path / "served.zip", {"toy/toy.csv": CSV}).read_bytes()
     _serve(monkeypatch, payload)
     source: dict[str, Any] = {

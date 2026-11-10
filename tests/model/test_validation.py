@@ -24,6 +24,7 @@ def _metrics(pr_auc: float, recall_at_1pct: float) -> Metrics:
     [(0.06, 0.8, [True, True]), (0.05, 0.8, [False, True]), (0.4, 0.79, [True, False])],
 )
 def test_selection_rule(low: float, recall: float, passed: list[bool]) -> None:
+    """The selection rule needs the PR-AUC interval low above its minimum and enough recall."""
     gates = validation.selection_rule(low, recall, min_low=0.05, min_recall=0.8)
     assert [g["passed"] for g in gates] == passed
     assert all(g["blocking"] for g in gates)
@@ -33,10 +34,12 @@ def test_selection_rule(low: float, recall: float, passed: list[bool]) -> None:
     ("model", "baseline", "passed"), [(0.45, 0.40, True), (0.43, 0.40, False), (0.1, 0.0, True)]
 )
 def test_gain_over_baseline(model: float, baseline: float, *, passed: bool) -> None:
+    """``gain_over_baseline`` passes at the minimum relative PR-AUC gain or over a zero baseline."""
     assert validation.gain_over_baseline(model, baseline, min_gain=0.1)["passed"] is passed
 
 
 def test_alert_rates_compare_the_flagged_share_with_each_budget() -> None:
+    """``alert_rates`` passes when each tier's flagged share is within the ratio of its budget."""
     scores = np.arange(1_000) / 1_000
     budgets = {"block": 0.01, "step-up": 0.1}
     on_budget = validation.alert_rates(
@@ -49,6 +52,7 @@ def test_alert_rates_compare_the_flagged_share_with_each_budget() -> None:
 
 
 def test_segment_recall_skips_the_overall_row() -> None:
+    """``segment_recall`` gates each segment's recall, leaving out the ``all`` row."""
     segments = {"all": _metrics(0.4, 0.9), "A": _metrics(0.5, 0.95), "B": _metrics(0.1, 0.4)}
     gates = validation.segment_recall(segments, min_recall=0.5)
     assert [(g["name"], g["passed"]) for g in gates] == [
@@ -58,6 +62,7 @@ def test_segment_recall_skips_the_overall_row() -> None:
 
 
 def test_weakest_segment_is_reported_not_blocking() -> None:
+    """``weakest_segment`` reports the weakest PR-AUC as a share of the overall, non-blocking."""
     segments = {"all": _metrics(0.4, 0.9), "A": _metrics(0.5, 0.95), "B": _metrics(0.1, 0.4)}
     gate = validation.weakest_segment(segments)
     assert gate["value"] == pytest.approx(0.25)
@@ -67,6 +72,7 @@ def test_weakest_segment_is_reported_not_blocking() -> None:
 
 
 def test_scoring_time_in_batch_and_for_one_login() -> None:
+    """Batch and single-login scoring-time gates pass only at or under their time limit."""
     assert validation.batch_scoring_time(2e-6, max_seconds=0.001)["passed"]
     assert not validation.batch_scoring_time(0.01, max_seconds=0.001)["passed"]
     assert validation.single_login_latency(0.03, max_seconds=0.2)["passed"]
@@ -74,6 +80,7 @@ def test_scoring_time_in_batch_and_for_one_login() -> None:
 
 
 def test_overfitting_gap_and_calibration_are_reported() -> None:
+    """The overfitting gap and the Brier score are computed and reported without blocking."""
     y = np.array([True, False, False, True, False])
     perfect = np.array([0.9, 0.1, 0.2, 0.8, 0.3])
     noisy = np.array([0.4, 0.5, 0.2, 0.8, 0.3])
@@ -86,6 +93,7 @@ def test_overfitting_gap_and_calibration_are_reported() -> None:
 
 
 def test_check_raises_only_for_failed_blocking_gates() -> None:
+    """``check`` raises only for failed blocking gates and lists them."""
     reported = validation.weakest_segment({"all": _metrics(0.4, 0.9), "A": _metrics(0.1, 0.9)})
     validation.check([reported])  # failed, but only reported
     blocking = validation.batch_scoring_time(1.0, max_seconds=0.001)

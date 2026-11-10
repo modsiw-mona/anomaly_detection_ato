@@ -48,7 +48,18 @@ class Friction(TypedDict):
 
 
 def threshold_for_rate(positive_scores: FloatArray, rate: float) -> float:
-    """Highest threshold that detects at least ``rate`` of the takeovers."""
+    """Highest threshold that detects at least ``rate`` of the takeovers.
+
+    Args:
+        positive_scores: Scores of the takeovers.
+        rate: Target detection rate, in (0, 1].
+
+    Returns:
+        The score of the k-th highest takeover, with k = ceil(rate x takeovers).
+
+    Raises:
+        ValueError: If ``rate`` is outside (0, 1] or there are no takeover scores.
+    """
     if not 0 < rate <= 1:
         raise ValueError("rate must be in (0, 1]")
     if positive_scores.size == 0:
@@ -70,7 +81,21 @@ def _check(frame: pl.DataFrame, score: str) -> None:
 def challenged_counts(
     frame: pl.DataFrame, thresholds: Sequence[float], *, score: str = "score"
 ) -> tuple[IntArray, IntArray]:
-    """Per legitimate user: number of logins, and number at or above each threshold (users x T)."""
+    """Per legitimate user: number of logins, and number at or above each threshold (users x T).
+
+    Args:
+        frame: Logins with ``user_id``, ``label_ato`` and the score column; takeover logins are
+            left out of the counts.
+        thresholds: The T score thresholds; a login at or above a threshold is challenged.
+        score: Name of the score column.
+
+    Returns:
+        The number of legitimate logins of each user (shape ``(users,)``), and the number of them
+        at or above each threshold (shape ``(users, T)``), users in the same order in both.
+
+    Raises:
+        ValueError: If the score has nulls or NaN, or there are no legitimate logins.
+    """
     _check(frame, score)
     legit = frame.filter(~pl.col(LABEL))
     per_user = legit.group_by(USER, maintain_order=True).agg(  # same order every run
@@ -104,6 +129,20 @@ def user_friction(
     """Friction at each fixed threshold (by name) and at the threshold of each detection rate.
 
     ``frame`` holds ``user_id``, ``label_ato`` and ``score`` for every login to evaluate.
+
+    Args:
+        frame: Logins with ``user_id``, ``label_ato`` and the score column.
+        thresholds: Fixed thresholds by name; None means none.
+        rates: Detection rates; each adds a threshold named ``detect <rate>``.
+        score: Name of the score column.
+
+    Returns:
+        The friction at every threshold, by name: fixed thresholds first, then the detection rates.
+
+    Raises:
+        ValueError: If the score has nulls or NaN, there are no legitimate logins, a detection
+            rate is outside (0, 1], a fixed threshold has the same name as a detection rate, or
+            there are no takeovers to set a detection-rate threshold on.
     """
     _check(frame, score)
     positives = frame.filter(pl.col(LABEL))[score].to_numpy()
@@ -144,6 +183,23 @@ def bootstrap_friction(  # noqa: PLR0913 — the knobs of one bootstrap
     Every threshold a replicate can pick is one of the takeovers' scores, so the per-user counts are
     computed once for each of them and each replicate only looks them up. Every rate uses the
     same resamples (the same seed), so its interval does not depend on the other rates asked for.
+
+    Args:
+        frame: Logins with ``user_id``, ``label_ato`` and the score column.
+        rates: Detection rates, each in (0, 1].
+        score: Name of the score column.
+        n_boot: Number of bootstrap replicates.
+        seed: Seed of the resampling, the same for every rate.
+        level: Coverage of the interval (0.95 gives the 2.5% and 97.5% quantiles).
+
+    Returns:
+        One row per detection rate: ``detection rate``, ``mean low``, ``mean high`` (interval of
+        the mean per-user rate) and ``ever low``, ``ever high`` (interval of the share of
+        legitimate users asked at least once).
+
+    Raises:
+        ValueError: If the score has nulls or NaN, there are no legitimate logins, a rate is
+            outside (0, 1], or there are no takeovers to set a threshold on.
     """
     _check(frame, score)
     positives = frame.filter(pl.col(LABEL))[score].to_numpy()

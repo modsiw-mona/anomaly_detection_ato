@@ -51,7 +51,17 @@ SIDES = ("dev", "test")
 
 
 def output_paths(config: DatasetConfig, data_dir: Path, side: str) -> dict[str, Path]:
-    """The scores (as notebook 07 wrote them) and the predictions with their tiers."""
+    """The scores (as notebook 07 wrote them) and the predictions with their tiers.
+
+    Args:
+        config: Dataset configuration; its ``name`` prefixes the file names.
+        data_dir: The repository's ``data`` folder.
+        side: Side of the split the files belong to, ``dev`` or ``test`` (not checked here).
+
+    Returns:
+        ``scores`` (``07_model_output/<dataset>_<side>_scores.parquet``) and ``predictions``
+        (``07_model_output/<dataset>_<side>_predictions.parquet``).
+    """
     folder = data_dir / "07_model_output"
     return {
         "scores": folder / f"{config.name}_{side}_scores.parquet",
@@ -60,7 +70,15 @@ def output_paths(config: DatasetConfig, data_dir: Path, side: str) -> dict[str, 
 
 
 def report_path(config: DatasetConfig, data_dir: Path) -> Path:
-    """The report of the latest inference run."""
+    """The report of the latest inference run.
+
+    Args:
+        config: Dataset configuration; its ``name`` names the report file.
+        data_dir: The repository's ``data`` folder.
+
+    Returns:
+        ``<data_dir>/08_reporting/<dataset>_inference_pipeline.json``.
+    """
     return data_dir / "08_reporting" / f"{config.name}_inference_pipeline.json"
 
 
@@ -98,7 +116,24 @@ def run(
 
     The outputs of an earlier run are removed first, so a failed run never leaves scores of another
     model next to the current one. Scoring the development side is in-sample (the model was trained
-    on it) and is marked so in the report.
+    on it) and is marked so in the report. The report is written to :func:`report_path` whether
+    the run passes or fails; an error of the run is recorded in it and raised again. An unknown
+    ``side`` is refused before the run starts, without a report.
+
+    Args:
+        config: Dataset configuration.
+        data_dir: The repository's ``data`` folder; the saved model, the feature table and the
+            split are read from it and the files of :func:`output_paths` written to it.
+        side: Side of the split to score: ``test`` (the default) or ``dev``.
+        drift_limit: Drift score at or above which a feature is reported as drifted from the
+            development side; drift is only reported, it never stops the run. Defaults to
+            ``data.drift.DRIFT_LIMIT``.
+
+    Returns:
+        The run report: ``dataset``, ``started``, ``side``, ``in_sample`` (True for ``dev``),
+        ``status`` (``passed`` or ``passed with drift warning``), ``model`` (SHA-256, selected
+        configuration and thresholds), ``rows``, ``drift``, ``tiers`` (logins, share and budget
+        per tier, plus ``share_with_stricter`` for the alert tiers), ``outputs`` and ``seconds``.
 
     Raises:
         pandera.errors.SchemaErrors: If the batch breaks the feature table's schema (nothing is
@@ -188,7 +223,19 @@ def run(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point."""
+    """Command-line entry point.
+
+    Reads ``--dataset`` (default ``rba``) and ``--side`` (default ``test``), runs :func:`run` on
+    the repository's ``data`` folder and, on success, prints the logins scored, the share flagged
+    per tier, the status and the path of the report.
+
+    Args:
+        argv: Command-line arguments; None reads them from sys.argv.
+
+    Returns:
+        0 if the batch was scored (with or without a drift warning); 1 if the batch broke the
+        feature table's schema and nothing was scored (logged as an error).
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     parser.add_argument("--side", default="test", choices=SIDES, help="Side of the split to score")

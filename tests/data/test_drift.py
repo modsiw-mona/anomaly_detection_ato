@@ -8,23 +8,27 @@ from data.drift import DRIFT_LIMIT, drift_report, ks_statistic, total_variation
 
 
 def test_ks_is_zero_for_identical_samples_and_one_for_disjoint_ones() -> None:
+    """The KS statistic is 0 for identical samples and 1 for samples that do not overlap."""
     a = np.array([1.0, 2.0, 3.0])
     assert ks_statistic(a, a.copy()) == 0
     assert ks_statistic(a, a + 10) == 1
 
 
 def test_ks_hand_computed() -> None:
+    """The KS statistic is the largest gap between the two distribution functions."""
     # distribution functions at 1, 2, 3, 4: a = 1/3, 2/3, 1, 1; b = 0, 1/3, 2/3, 1
     assert ks_statistic(np.array([1.0, 2, 3]), np.array([2.0, 3, 4])) == pytest.approx(1 / 3)
 
 
 def test_ks_ignores_order_and_handles_ties() -> None:
+    """The KS statistic does not depend on sample order and handles tied values."""
     a = np.array([3.0, 1, 1, 2])
     assert ks_statistic(a, np.array([1.0, 1, 2, 3])) == 0
     assert ks_statistic(np.array([0.0, 0, 0, 1]), np.array([0.0, 1, 1, 1])) == pytest.approx(0.5)
 
 
 def test_total_variation_hand_computed() -> None:
+    """Total variation distance matches hand-computed values on category shares."""
     a = pl.Series(["x", "x", "y", "y"])
     b = pl.Series(["x", "y", "y", "y"])
     assert total_variation(a, b) == pytest.approx(0.25)
@@ -33,17 +37,20 @@ def test_total_variation_hand_computed() -> None:
 
 
 def test_total_variation_counts_nulls_as_a_value() -> None:
+    """Total variation treats null as one more category value."""
     a = pl.Series([True, None])
     b = pl.Series([True, True])
     assert total_variation(a, b) == pytest.approx(0.5)
 
 
 def test_empty_samples_do_not_drift() -> None:
+    """An empty sample gives a distance of 0 under both measures."""
     assert ks_statistic(np.array([]), np.array([1.0])) == 0
     assert total_variation(pl.Series([], dtype=pl.String), pl.Series(["x"])) == 0
 
 
 def test_report_uses_the_measure_of_each_kind_and_the_null_gap() -> None:
+    """``drift_report`` uses KS on numbers, total variation otherwise; a larger null gap wins."""
     reference = pl.DataFrame({"n": [1.0, 2.0, 3.0, None], "flag": [True, False, True, False]})
     current = pl.DataFrame({"n": [1.0, 2.0, 3.0, 4.0], "flag": [True, False, True, False]})
     report = drift_report(reference, current, ["n", "flag"]).rows_by_key("column", named=True)
@@ -57,6 +64,7 @@ def test_report_uses_the_measure_of_each_kind_and_the_null_gap() -> None:
 
 
 def test_report_flags_a_feature_over_the_limit() -> None:
+    """A feature whose score exceeds ``DRIFT_LIMIT`` is reported as not within the limit."""
     reference = pl.DataFrame({"n": np.zeros(100)})
     current = pl.DataFrame({"n": np.r_[np.zeros(70), np.ones(30)]})  # 30% moved
     row = drift_report(reference, current, ["n"]).row(0, named=True)

@@ -52,6 +52,12 @@ def md5_of(path: Path) -> str:
     """Return the hex MD5 digest of a file, read in chunks.
 
     MD5 is used only to compare against the checksum the publisher declared, not for security.
+
+    Args:
+        path: File to hash.
+
+    Returns:
+        The MD5 digest as 32 lowercase hexadecimal characters.
     """
     digest = hashlib.md5(usedforsecurity=False)
     with path.open("rb") as handle:
@@ -66,8 +72,19 @@ def fetch(url: str, dest: Path, expected_md5: str, *, timeout: float = 60.0) -> 
     The download goes to ``<dest>.part`` and is renamed only after the checksum matches, so an
     interrupted or corrupted download never looks complete.
 
+    Args:
+        url: Address to download from; must start with ``https://``.
+        dest: Path to save the file as. An existing file there is kept if its MD5 matches and
+            downloaded again otherwise.
+        expected_md5: Published MD5 checksum, as lowercase hexadecimal.
+        timeout: Socket timeout for the connection and each read, in seconds.
+
+    Returns:
+        ``dest``, holding a file whose MD5 equals ``expected_md5``.
+
     Raises:
-        ValueError: If ``url`` is not https.
+        ValueError: If ``url`` is not https and a download is needed (a verified existing copy
+            is returned without looking at ``url``).
         IntegrityError: If the downloaded file's MD5 differs from ``expected_md5``.
     """
     if dest.is_file():
@@ -115,6 +132,15 @@ def _check_entry(info: zipfile.ZipInfo) -> None:
 def check_archive(archive: Path, member: str, max_uncompressed_bytes: int) -> zipfile.ZipInfo:
     """Inspect an archive without extracting it and return the entry for ``member``.
 
+    Args:
+        archive: Zip file to inspect.
+        member: Path of the expected entry inside the archive, exactly as stored.
+        max_uncompressed_bytes: Upper bound for the summed uncompressed size of all entries, in
+            bytes.
+
+    Returns:
+        The zip entry of ``member``, with its declared size.
+
     Raises:
         UnsafeArchiveError: If any entry is unsafe, the total uncompressed size exceeds
             ``max_uncompressed_bytes``, or ``member`` is missing.
@@ -139,6 +165,16 @@ def extract_member(archive: Path, member: str, dest_dir: Path, max_uncompressed_
 
     Skips extraction when a file of the expected size is already present. Zip CRC checks run
     while reading, and extraction stops if the member yields more bytes than its header declares.
+
+    Args:
+        archive: Zip file to extract from.
+        member: Path of the entry to extract, exactly as stored in the archive.
+        dest_dir: Directory to write the extracted file into; it must already exist.
+        max_uncompressed_bytes: Upper bound for the summed uncompressed size of all entries, in
+            bytes (see :func:`check_archive`).
+
+    Returns:
+        The path of the extracted file: ``dest_dir`` joined with the member's file name.
 
     Raises:
         UnsafeArchiveError: If the archive fails :func:`check_archive` or the member's actual
@@ -169,14 +205,38 @@ def extract_member(archive: Path, member: str, dest_dir: Path, max_uncompressed_
 
 
 def download_dataset(config: DatasetConfig, raw_dir: Path) -> Path:
-    """Download, verify and extract a dataset; return the path of the raw data file."""
+    """Download, verify and extract a dataset; return the path of the raw data file.
+
+    Args:
+        config: Dataset configuration; its ``source`` section gives the URL, archive name,
+            checksum, member and size limit.
+        raw_dir: Directory for the archive and the extracted file (``data/01_raw``).
+
+    Returns:
+        The path of the extracted raw data file inside ``raw_dir``.
+
+    Raises:
+        ValueError: If the source URL is not https and a download is needed (from :func:`fetch`).
+        IntegrityError: If the downloaded archive fails its checksum (from :func:`fetch`).
+        UnsafeArchiveError: If the archive is unsafe or lacks the member (from
+            :func:`extract_member`).
+    """
     source = config.source
     archive = fetch(str(source.url), raw_dir / source.archive, source.md5)
     return extract_member(archive, source.member, raw_dir, source.max_uncompressed_bytes)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point."""
+    """Command-line entry point: download and extract ``--dataset`` into ``data/01_raw``.
+
+    Prints the path of the raw data file, relative to the repository.
+
+    Args:
+        argv: Command-line arguments; None reads them from sys.argv.
+
+    Returns:
+        The process exit code (0 on success). Failures raise instead of returning a code.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     args = parser.parse_args(argv)

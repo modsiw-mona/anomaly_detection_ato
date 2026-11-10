@@ -112,11 +112,32 @@ class TrainingConfig(_Strict):
 
 
 def training_config_path(dataset: str, conf_dir: Path | None = None) -> Path:
-    """Where the training configuration of ``dataset`` lives."""
+    """Where the training configuration of ``dataset`` lives.
+
+    Args:
+        dataset: Dataset name, as in ``conf/training/<dataset>.yaml``.
+        conf_dir: Configuration folder; None uses the repository's ``conf`` folder.
+
+    Returns:
+        ``<conf_dir>/training/<dataset>.yaml``.
+    """
     return (conf_dir or find_repo_root() / "conf") / "training" / f"{dataset}.yaml"
 
 
 def load_training_config(dataset: str, conf_dir: Path | None = None) -> TrainingConfig:
-    """Read and validate ``conf/training/<dataset>.yaml``."""
+    """Read and validate ``conf/training/<dataset>.yaml``.
+
+    Args:
+        dataset: Dataset name, as in ``conf/training/<dataset>.yaml``.
+        conf_dir: Configuration folder; None uses the repository's ``conf`` folder.
+
+    Returns:
+        The validated, immutable training configuration.
+
+    Raises:
+        pydantic.ValidationError: If the file breaks the schema: an unknown or missing key, a value
+            out of range, an unknown model or feature group, or budgets that are not the response
+            tiers listed strictest first.
+    """
     raw = yaml.safe_load(training_config_path(dataset, conf_dir).read_text())
     return TrainingConfig.model_validate(raw)

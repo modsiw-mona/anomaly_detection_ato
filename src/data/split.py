@@ -34,8 +34,18 @@ def assign_split(
 ) -> pl.DataFrame:
     """Assign every user to ``dev`` or ``test`` (grouped by user, stratified by label).
 
+    Args:
+        features: Feature table; only ``user_id`` and ``label_ato`` are read.
+        test_share: Share of the users of each stratum put on the test side, rounded to the
+            nearest whole user.
+        seed: Seed of the random generator that draws the test users.
+
     Returns:
-        One row per user: ``user_id``, ``has_takeover``, ``split``.
+        One row per user, sorted by ``user_id``: ``user_id``, ``has_takeover`` (at least one
+        takeover login) and ``split`` (``dev`` or ``test``).
+
+    Raises:
+        ValueError: If ``test_share`` is not strictly between 0 and 1.
     """
     if not 0 < test_share < 1:
         raise ValueError("test_share must be between 0 and 1")
@@ -61,7 +71,15 @@ def assign_split(
 
 
 def split_path(config: DatasetConfig, data_dir: Path) -> Path:
-    """Where the user -> split assignment for ``config`` lives."""
+    """Where the user -> split assignment for ``config`` lives.
+
+    Args:
+        config: Dataset configuration; its ``name`` names the file.
+        data_dir: Root of the data layout (``<repo>/data``).
+
+    Returns:
+        ``<data_dir>/05_model_input/<name>_split.parquet``.
+    """
     return data_dir / "05_model_input" / f"{config.name}_split.parquet"
 
 
@@ -70,6 +88,19 @@ def load_side(config: DatasetConfig, data_dir: Path, side: str) -> pl.LazyFrame:
 
     Joins do not guarantee row order; a fixed order keeps every seeded step downstream (sampling,
     bootstrap) reproducible from run to run.
+
+    Args:
+        config: Dataset configuration.
+        data_dir: Root of the data layout (``<repo>/data``) holding the feature table and the
+            split.
+        side: ``dev`` or ``test``.
+
+    Returns:
+        The rows of the feature table whose user is on ``side``, with the feature table's
+        columns, sorted by ``event_id``.
+
+    Raises:
+        ValueError: If ``side`` is neither ``dev`` nor ``test``.
     """
     if side not in {"dev", "test"}:
         raise ValueError("side must be 'dev' or 'test'")
@@ -86,6 +117,16 @@ def write_split(config: DatasetConfig, data_dir: Path, *, check: Check | None = 
 
     Written to ``.part`` and renamed once complete and accepted by ``check``, if given
     (:func:`data.intermediate.publish`).
+
+    Args:
+        config: Dataset configuration.
+        data_dir: Root of the data layout (``<repo>/data``); the feature table is read from it
+            and the split is written into it.
+        check: Function given the path of the finished ``.part`` file; raising rejects the file
+            and keeps any previous output. None publishes without a check.
+
+    Returns:
+        The path of the split file (see :func:`split_path`).
     """
     out = split_path(config, data_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -97,7 +138,16 @@ def write_split(config: DatasetConfig, data_dir: Path, *, check: Check | None = 
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point."""
+    """Command-line entry point: compute and write the split of ``--dataset``.
+
+    Prints the path of the split file, relative to the repository.
+
+    Args:
+        argv: Command-line arguments; None reads them from sys.argv.
+
+    Returns:
+        The process exit code (0 on success). Failures raise instead of returning a code.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     args = parser.parse_args(argv)

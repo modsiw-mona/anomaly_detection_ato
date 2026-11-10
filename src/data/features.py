@@ -85,7 +85,19 @@ CONTEXT_COLUMNS = ("country",)
 
 
 def feature_columns(groups: tuple[str, ...] = DEFAULT_GROUPS) -> list[str]:
-    """Feature column names of the given groups, in group order."""
+    """Feature column names of the given groups, in group order.
+
+    Args:
+        groups: Names of feature groups, keys of :data:`FEATURE_GROUPS`. The default,
+            :data:`DEFAULT_GROUPS`, leaves out ``artefacts``, ``rtt``, ``campaign`` and
+            ``travel``.
+
+    Returns:
+        The column names of each group in turn, in the order :data:`FEATURE_GROUPS` lists them.
+
+    Raises:
+        KeyError: If a name in ``groups`` is not a feature group.
+    """
     return [column for group in groups for column in FEATURE_GROUPS[group]]
 
 
@@ -95,7 +107,16 @@ def _catch_all_ids(config: DatasetConfig) -> list[int] | list[str]:
 
 
 def real_account_attempts(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.LazyFrame:
-    """All attempts on real accounts (catch-all IDs removed), in user and time order."""
+    """All attempts on real accounts (catch-all IDs removed), in user and time order.
+
+    Args:
+        intermediate: Intermediate dataset: one row per login attempt, standard field names.
+        config: Dataset configuration; it gives the catch-all user IDs and the user ID type.
+
+    Returns:
+        The same rows minus those of catch-all IDs, successful and failed alike, sorted by
+        ``user_id``, ``timestamp`` and ``event_id``.
+    """
     return intermediate.filter(~pl.col(USER).is_in(_catch_all_ids(config))).sort(
         USER, TIME, EVENT_ID
     )
@@ -228,7 +249,22 @@ def _network_features(attempts: pl.LazyFrame, available: set[str]) -> pl.LazyFra
 
 
 def build_features(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.LazyFrame:
-    """Feature table: one row per successful login of a real account inside the label window."""
+    """Feature table: one row per successful login of a real account inside the label window.
+
+    Features whose source fields the dataset does not provide are left out.
+
+    Args:
+        intermediate: Intermediate dataset (all attempts, every account), as written by
+            :func:`data.intermediate.build_intermediate`.
+        config: Dataset configuration; it gives the mapped fields, the catch-all user IDs and
+            the label window.
+
+    Returns:
+        One row per successful login of a real account inside the label window (every login if
+        there is no window), sorted by ``timestamp`` and ``event_id``: ``event_id``,
+        ``user_id``, ``timestamp``, the context columns the dataset has (``country``),
+        ``label_ato``, then every available feature column of :data:`FEATURE_GROUPS`.
+    """
     available = set(mapped_fields(config))
     attempts = real_account_attempts(intermediate, config)
     successes = attempts.filter(pl.col(SUCCESS))
@@ -258,7 +294,15 @@ def build_features(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.Lazy
 
 
 def features_path(config: DatasetConfig, data_dir: Path) -> Path:
-    """Where the feature table for ``config`` lives."""
+    """Where the feature table for ``config`` lives.
+
+    Args:
+        config: Dataset configuration; its ``name`` names the file.
+        data_dir: Root of the data layout (``<repo>/data``).
+
+    Returns:
+        ``<data_dir>/04_feature/<name>_features.parquet``.
+    """
     return data_dir / "04_feature" / f"{config.name}_features.parquet"
 
 
@@ -267,6 +311,16 @@ def write_features(config: DatasetConfig, data_dir: Path, *, check: Check | None
 
     Written to ``.part`` and renamed once complete and accepted by ``check``, if given
     (:func:`data.intermediate.publish`).
+
+    Args:
+        config: Dataset configuration.
+        data_dir: Root of the data layout (``<repo>/data``); the intermediate dataset is read from
+            it and the feature table is written into it.
+        check: Function given the path of the finished ``.part`` file; raising rejects the file
+            and keeps any previous output. None publishes without a check.
+
+    Returns:
+        The path of the feature table (see :func:`features_path`).
     """
     out = features_path(config, data_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -279,7 +333,16 @@ def write_features(config: DatasetConfig, data_dir: Path, *, check: Check | None
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point."""
+    """Command-line entry point: build and write the feature table of ``--dataset``.
+
+    Prints the path of the feature table, relative to the repository.
+
+    Args:
+        argv: Command-line arguments; None reads them from sys.argv.
+
+    Returns:
+        The process exit code (0 on success). Failures raise instead of returning a code.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     args = parser.parse_args(argv)

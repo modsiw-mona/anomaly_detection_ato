@@ -219,6 +219,19 @@ def build_feature_schema(config: DatasetConfig, *, labelled: bool = True) -> pa.
     """Pandera schema for the feature table of ``config``.
 
     With ``labelled=False`` the label column is not required: a batch of logins to score has none.
+
+    Args:
+        config: Dataset configuration; it gives the storage types of the identifier and time
+            columns, the catch-all user IDs to exclude and the label window.
+        labelled: Whether the label column ``label_ato`` must be present.
+
+    Returns:
+        A strict schema: ``event_id``, ``user_id`` and ``timestamp`` are required, every known
+        feature and context column is optional but typed and range-checked, and the row-wise
+        relations between features are frame-level checks.
+
+    Raises:
+        RuntimeError: If a feature listed in ``FEATURE_GROUPS`` has no validation rule.
     """
     catch_all: list[int] | list[str] = list(config.catch_all_user_ids)
     if storage_dtype(USER, config) == pl.Int64():
@@ -248,6 +261,15 @@ def validate_features(
 ) -> pl.DataFrame:
     """Validate the feature table against :func:`build_feature_schema`, collecting every failure.
 
+    Args:
+        frame: Feature table, as built by :func:`data.features.build_features`.
+        config: Dataset configuration the table was built from.
+        labelled: Whether the label column ``label_ato`` must be present (False for a batch of
+            logins to score).
+
+    Returns:
+        The validated feature table.
+
     Raises:
         pandera.errors.SchemaErrors: If any rule fails (all failures are listed).
     """
@@ -270,12 +292,22 @@ def validate_split(
     (:func:`data.split.assign_split` with ``test_share`` and ``seed``) gives, so an edited,
     re-seeded or stale split is caught.
 
+    Args:
+        features: Feature table the split was computed from; only ``user_id`` and ``label_ato``
+            are read.
+        split: User -> side assignment to check: one row per user with ``user_id``,
+            ``has_takeover`` and ``split``.
+        test_share: Share of users per stratum the pre-registered rule puts on the test side.
+        seed: Random seed of the pre-registered rule.
+
     Returns:
         One row per user: ``user_id``, ``labelled`` (has a takeover in the feature table, null if
         the user is not in it), ``has_takeover``, ``split`` (null if the user has no side) and
         ``registered`` (the side of the pre-registered rule).
 
     Raises:
+        ValueError: If ``test_share`` is not strictly between 0 and 1 (from
+            :func:`data.split.assign_split`).
         pandera.errors.SchemaErrors: If any rule fails (all failures are listed).
     """
     users = features.group_by(USER).agg(pl.col(LABEL).any().alias("labelled")).collect()

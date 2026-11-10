@@ -25,7 +25,11 @@ def find_repo_root(start: Path | None = None) -> Path:
     """Return the repository root: the closest ancestor containing ``pyproject.toml``.
 
     Args:
-        start: Directory to search upward from. Defaults to this file's directory.
+        start: Directory to search upward from. None starts from this file's location.
+
+    Returns:
+        The absolute path of the first directory, ``start`` itself included, that holds a
+        ``pyproject.toml`` file.
 
     Raises:
         FileNotFoundError: If no ancestor contains ``pyproject.toml``.
@@ -141,7 +145,13 @@ class ValidationRules(_Strict):
         return self
 
     def fields(self) -> set[str]:
-        """Every canonical field these rules refer to."""
+        """Every canonical field these rules refer to.
+
+        Returns:
+            The names of the fields in ``unique_together``, ``allowed_values``, ``patterns`` and
+            ``numeric_ranges``. ``timestamp_range`` always refers to ``timestamp`` and is not
+            included.
+        """
         return {
             *self.unique_together,
             *self.allowed_values,
@@ -211,7 +221,12 @@ class DatasetConfig(_Strict):
         return self
 
     def rename_map(self) -> dict[str, str]:
-        """Return the dataset-column -> canonical-field mapping, labels included."""
+        """Return the dataset-column -> canonical-field mapping, labels included.
+
+        Returns:
+            A dictionary from each mapped column name in the dataset to its canonical field name,
+            covering both ``columns`` and ``labels``.
+        """
         return {source: canonical for canonical, source in {**self.columns, **self.labels}.items()}
 
 
@@ -220,7 +235,10 @@ def load_dataset_config(name: str, conf_dir: Path | None = None) -> DatasetConfi
 
     Args:
         name: Dataset name (lowercase letters, digits, ``_`` and ``-``).
-        conf_dir: Directory holding the dataset files. Defaults to ``<repo>/conf/dataset``.
+        conf_dir: Directory holding the dataset files. None uses ``<repo>/conf/dataset``.
+
+    Returns:
+        The validated, immutable configuration of the dataset.
 
     Raises:
         ValueError: If ``name`` is not a valid dataset name.

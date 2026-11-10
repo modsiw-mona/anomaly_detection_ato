@@ -48,6 +48,7 @@ def _with(path: tuple[str, ...], value: Any) -> dict[str, Any]:
 
 
 def test_valid_config_loads() -> None:
+    """A valid config loads and ``rename_map`` maps raw column and label names to standard ones."""
     config = DatasetConfig.model_validate(VALID)
     assert config.rename_map() == {
         "User": "user_id",
@@ -59,6 +60,7 @@ def test_valid_config_loads() -> None:
 
 
 def test_rba_config_in_repo_is_valid() -> None:
+    """The RBA config in the repository loads, with an https source, both labels and artefacts."""
     config = load_dataset_config("rba")
     assert config.name == "rba"
     assert config.source.url.scheme == "https"
@@ -84,22 +86,26 @@ def test_rba_config_in_repo_is_valid() -> None:
     ],
 )
 def test_invalid_configs_are_rejected(path: tuple[str, ...], value: Any) -> None:
+    """Missing, misplaced, unsafe or unknown config entries raise ``ValidationError``."""
     with pytest.raises(ValidationError):
         DatasetConfig.model_validate(_with(path, value))
 
 
 @pytest.mark.parametrize("name", ["../rba", "RBA", "", "rba/../x"])
 def test_dataset_name_is_validated(name: str) -> None:
+    """``load_dataset_config`` rejects names with paths, capitals or no characters."""
     with pytest.raises(ValueError, match="Invalid dataset name"):
         load_dataset_config(name)
 
 
 def test_missing_config_file(tmp_path: Path) -> None:
+    """A dataset name without a config file raises ``FileNotFoundError``."""
     with pytest.raises(FileNotFoundError):
         load_dataset_config("absent", conf_dir=tmp_path)
 
 
 def test_find_repo_root_from_nested_directory() -> None:
+    """``find_repo_root`` finds the folder with ``pyproject.toml``, also from a subfolder."""
     root = find_repo_root()
     assert (root / "pyproject.toml").is_file()
     assert find_repo_root(root / "src" / "data") == root

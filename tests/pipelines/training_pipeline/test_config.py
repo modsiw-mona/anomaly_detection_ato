@@ -23,6 +23,7 @@ def _raw() -> dict[str, Any]:
 
 
 def test_rba_configuration_is_the_one_selected_in_issue_6() -> None:
+    """The ``rba`` configuration holds the selected model, feature groups, folds and budgets."""
     config = load_training_config("rba")
     assert config.model == SELECTED
     assert config.feature_groups == (*DEFAULT_GROUPS, "campaign", "travel")
@@ -41,6 +42,7 @@ def test_rba_configuration_is_the_one_selected_in_issue_6() -> None:
 
 
 def test_the_selected_forest_is_the_tuned_one() -> None:
+    """The selected random forest has the tuned leaf size, features, trees and class weight."""
     model = SUPERVISED[SELECTED](["prior_successes"], 1).named_steps["model"]
     assert (model.min_samples_leaf, model.max_features, model.n_estimators) == (2, "sqrt", 300)
     assert model.class_weight == "balanced_subsample"
@@ -57,16 +59,19 @@ def test_the_selected_forest_is_the_tuned_one() -> None:
     ],
 )
 def test_invalid_configuration_is_rejected(change: dict[str, Any], message: str) -> None:
+    """Unknown names, unordered budgets, out-of-range shares and extra keys are rejected."""
     with pytest.raises(ValidationError, match=message):
         TrainingConfig.model_validate({**_raw(), **change})
 
 
 def test_budgets_must_name_the_response_tiers() -> None:
+    """Budgets whose names are not the response tiers are rejected."""
     with pytest.raises(ValidationError, match="response tiers"):
         TrainingConfig.model_validate({**_raw(), "budgets": {"block": 0.001, "step-up": 0.01}})
 
 
 def test_alert_rate_ratio_must_bracket_one() -> None:
+    """An alert-rate ratio range that does not contain 1 is rejected."""
     raw = _raw()
     raw["gates"] = {**raw["gates"], "alert_rate_ratio": [1.5, 2.0]}
     with pytest.raises(ValidationError, match="alert_rate_ratio"):

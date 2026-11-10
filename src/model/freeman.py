@@ -78,6 +78,13 @@ def freeman_terms(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.LazyF
     ``f``, ``log_global_f`` = log p(x_f) and ``log_local_f`` = log p(x_f | u). Local terms and the
     prior are null on a user's first login. Exposed so that analyses can recombine the terms (e.g.
     drop the global factor) without re-implementing the counting.
+
+    Args:
+        intermediate: The intermediate login table (standard column names).
+        config: Dataset configuration, used to select the attempts on real accounts.
+
+    Returns:
+        One row per successful login of a real account, with the columns described above.
     """
     levels = sorted({level for feature in HIERARCHY.values() for level in feature})
     successes = real_account_attempts(intermediate, config).filter(pl.col(SUCCESS))
@@ -108,7 +115,16 @@ def freeman_terms(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.LazyF
 
 
 def freeman_scores(intermediate: pl.LazyFrame, config: DatasetConfig) -> pl.LazyFrame:
-    """``event_id`` and ``freeman_log_risk`` (null on a user's first login)."""
+    """``event_id`` and ``freeman_log_risk`` (null on a user's first login).
+
+    Args:
+        intermediate: The intermediate login table (standard column names).
+        config: Dataset configuration, used to select the attempts on real accounts.
+
+    Returns:
+        One row per successful login of a real account: ``event_id`` and ``freeman_log_risk``, the
+        log of the risk score (higher means more suspicious).
+    """
     ratio = [pl.col(f"log_global_{f}") - pl.col(f"log_local_{f}") for f in HIERARCHY]
     return freeman_terms(intermediate, config).select(
         EVENT_ID, (pl.col("log_prior") + pl.sum_horizontal(ratio)).alias(SCORE)

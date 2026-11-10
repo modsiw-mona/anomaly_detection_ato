@@ -29,6 +29,7 @@ def bundle_dir(data_dir: Path, tmp_path_factory: pytest.TempPathFactory) -> Path
 
 
 def test_bundle_reads_back_what_was_written(data_dir: Path, bundle_dir: Path) -> None:
+    """A bundle read from disk equals the one built from the data, with scenarios for each kind."""
     built, read = build_bundle(data_dir, "rba"), DemoBundle.read(bundle_dir)
     assert list(read.thresholds.items()) == list(built.thresholds.items()), "strictest tier first"
     assert read.counts == built.counts
@@ -89,6 +90,7 @@ def test_the_demo_runs_from_the_bundle_alone(
 
 
 def test_fetch_downloads_and_checks_every_file(bundle_dir: Path, tmp_path: Path) -> None:
+    """``fetch`` downloads every listed file and replaces a cached file whose SHA-256 changed."""
     files = sorted(bundle_dir.iterdir())
     record = manifest(files, bundle_dir.as_uri() + "/", "test")
     folder = fetch(record, cache=tmp_path)
@@ -100,6 +102,7 @@ def test_fetch_downloads_and_checks_every_file(bundle_dir: Path, tmp_path: Path)
 
 
 def test_fetch_never_keeps_a_file_whose_sha256_differs(bundle_dir: Path, tmp_path: Path) -> None:
+    """``fetch`` rejects a file whose SHA-256 differs and leaves neither it nor a partial file."""
     record = manifest(sorted(bundle_dir.iterdir()), bundle_dir.as_uri() + "/", "test")
     record["files"]["rba_model.joblib"] = "0" * 64
     with pytest.raises(ValueError, match="SHA-256"):
@@ -112,6 +115,7 @@ def test_fetch_never_keeps_a_file_whose_sha256_differs(bundle_dir: Path, tmp_pat
     ("field", "value"), [("release", "../outside"), ("file", "../evil.txt"), ("file", "//host/x")]
 )
 def test_fetch_refuses_names_that_are_not_plain(tmp_path: Path, field: str, value: str) -> None:
+    """``fetch`` refuses a release or file name that could point outside the cache folder."""
     record = {
         "release": "ok",
         "base_url": tmp_path.as_uri() + "/",
@@ -126,6 +130,7 @@ def test_fetch_refuses_names_that_are_not_plain(tmp_path: Path, field: str, valu
 
 
 def test_fetch_without_a_cache_uses_a_new_private_folder(bundle_dir: Path) -> None:
+    """Without a cache, ``fetch`` downloads into a new folder readable only by the current user."""
     record = manifest(sorted(bundle_dir.iterdir()), bundle_dir.as_uri() + "/", "test")
     first, second = fetch(record), fetch(record)
     assert first != second, "a new folder each time"
@@ -135,6 +140,7 @@ def test_fetch_without_a_cache_uses_a_new_private_folder(bundle_dir: Path) -> No
 
 
 def test_fetch_refuses_plain_http(tmp_path: Path) -> None:
+    """``fetch`` refuses a base URL that uses plain HTTP."""
     record = {
         "release": "x",
         "base_url": "http://example.com/",
@@ -145,6 +151,7 @@ def test_fetch_refuses_plain_http(tmp_path: Path) -> None:
 
 
 def test_the_committed_record_lists_the_bundle_and_the_model() -> None:
+    """The committed ``bundle.json`` points to the repository releases and hashes all five files."""
     record_file = APP.with_name("bundle.json")
     if not record_file.exists():
         pytest.skip("no bundle published yet")
@@ -163,8 +170,11 @@ def test_the_committed_record_lists_the_bundle_and_the_model() -> None:
 
 
 def test_the_deployment_pins_the_libraries_the_model_was_saved_with() -> None:
-    """Streamlit Cloud installs `requirements.txt`; the model is a pickle, so scikit-learn and numpy must be the
-    versions it was saved with, whatever Dependabot later does to `uv.lock`."""
+    """The deployment requirements pin the library versions the model was saved with.
+
+    Streamlit Cloud installs ``requirements.txt``; the model is a pickle, so scikit-learn and numpy
+    must be the versions it was saved with, whatever Dependabot later does to ``uv.lock``.
+    """
     record_file = APP.with_name("bundle.json")
     if not record_file.exists():
         pytest.skip("no bundle published yet")
@@ -199,6 +209,7 @@ def _one_file_record(bundle_dir: Path) -> dict[str, object]:
 def test_fetch_retries_temporary_server_errors(
     bundle_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``fetch`` retries temporary server errors, waiting longer before each new attempt."""
     flaky, waits = _Flaky([504, 503]), list[float]()
     monkeypatch.setattr("urllib.request.urlopen", flaky)
     monkeypatch.setattr("time.sleep", waits.append)
@@ -211,6 +222,7 @@ def test_fetch_retries_temporary_server_errors(
 def test_fetch_gives_up_after_the_last_retry(
     bundle_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``fetch`` raises the server error once every retry has failed."""
     flaky = _Flaky([504] * 10)
     monkeypatch.setattr("urllib.request.urlopen", flaky)
     monkeypatch.setattr("time.sleep", lambda _: None)
@@ -222,6 +234,7 @@ def test_fetch_gives_up_after_the_last_retry(
 def test_fetch_does_not_retry_a_missing_file(
     bundle_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``fetch`` raises a 404 at once, without retrying."""
     flaky = _Flaky([404])
     monkeypatch.setattr("urllib.request.urlopen", flaky)
     monkeypatch.setattr("time.sleep", lambda _: None)

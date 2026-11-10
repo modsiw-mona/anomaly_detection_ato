@@ -15,12 +15,14 @@ LEARNT_OVER_CHANCE = 10  # ~9 training takeovers: demand 10x the PR-AUC of chanc
 
 @pytest.fixture(scope="module")
 def features() -> pl.DataFrame:
+    """Random-event features where a takeover is any login from a new country for the user."""
     frame = build_features(_events(_random_events(1_500, seed=5)), _config()).collect()
     # a learnable signal: takeovers are logins from a new country for the user
     return frame.with_columns(pl.col("new_country").fill_null(value=False).alias("label_ato"))
 
 
 def test_rule_scores(features: pl.DataFrame) -> None:
+    """The dummy score is constant, each rule scores its signal and the combined rule sums them."""
     scores = rule_scores(features)
     assert not scores["dummy (constant)"].any()
     new_country = features["new_country"].fill_null(value=False).to_numpy()
@@ -30,6 +32,7 @@ def test_rule_scores(features: pl.DataFrame) -> None:
 
 
 def test_training_sample_keeps_every_takeover(features: pl.DataFrame) -> None:
+    """``training_sample`` keeps every takeover and a seeded share of legitimate logins."""
     sample = training_sample(features, negative_share=NEGATIVE_SHARE)
     assert sample["label_ato"].sum() == features["label_ato"].sum()
     legit_kept = (~sample["label_ato"].to_numpy()).sum() / (~features["label_ato"].to_numpy()).sum()
@@ -38,6 +41,7 @@ def test_training_sample_keeps_every_takeover(features: pl.DataFrame) -> None:
 
 
 def test_logistic_baseline_learns_a_real_signal(features: pl.DataFrame) -> None:
+    """The logistic baseline reaches over 10 times the chance PR-AUC on held-out rows."""
     alternate = features.with_row_index("_row")
     train = alternate.filter(pl.col("_row") % 2 == 0).drop("_row")
     test = alternate.filter(pl.col("_row") % 2 == 1).drop("_row")
@@ -52,6 +56,7 @@ def test_logistic_baseline_learns_a_real_signal(features: pl.DataFrame) -> None:
 
 
 def test_training_sample_ignores_input_row_order(features: pl.DataFrame) -> None:
+    """``training_sample`` returns the same rows whatever the input row order."""
     shuffled = features.sample(fraction=1.0, shuffle=True, seed=1)
     assert not shuffled["event_id"].equals(features["event_id"]), "the shuffle must change order"
     assert training_sample(shuffled).equals(training_sample(features))

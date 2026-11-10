@@ -96,14 +96,29 @@ NEVER_SEEN_NETWORK = "Nobody had logged in from this network before (0%), so no 
 
 
 def gap_of(hours: float | None) -> str | None:
-    """The time-since-previous-login range of a login (None on a first login)."""
+    """The time-since-previous-login range of a login (None on a first login).
+
+    Args:
+        hours: Hours since the account's previous successful login; None on a first login.
+
+    Returns:
+        The label of the range in ``GAPS``, or None when ``hours`` is None.
+    """
     if hours is None:
         return None
     return next(name for name, upper in GAPS.items() if hours < upper)
 
 
 def unknown(login: pl.DataFrame, signal: str) -> bool:
-    """Whether the signal cannot be judged for this login (e.g. the region is unknown)."""
+    """Whether the signal cannot be judged for this login (e.g. the region is unknown).
+
+    Args:
+        login: The login, a one-row frame.
+        signal: Signal name, for example ``new_region``.
+
+    Returns:
+        True when the signal has a missing-value flag (``UNKNOWN_IF``) and the flag is set.
+    """
     column = UNKNOWN_IF.get(signal)
     return column is not None and column in login.columns and bool(login[column][0])
 
@@ -117,10 +132,19 @@ def required_signals(  # noqa: C901, PLR0912 - one place for every rule, in the 
 ) -> Required:
     """Signals a rule fixes, with the value and the reason.
 
-    ``login`` is the real login; ``located`` the login after the *where from* controls; ``switches`` the
-    viewer's own switch values (a value a rule forced must not be passed here, so a rule never feeds itself);
-    ``gap`` the chosen time since the previous login; ``moved`` the *where from* groups whose value the viewer
-    changed (``network``, ``country``, ``browser``, ``device``). Rules are applied until none adds anything.
+    Rules are applied until none adds anything.
+
+    Args:
+        login: The real login, a one-row frame.
+        located: The login after the *where from* controls, a one-row frame.
+        switches: The viewer's own switch values by signal. A value a rule forced must not be
+            passed here, so a rule never feeds itself.
+        gap: The chosen time since the previous login, a label of ``GAPS``.
+        moved: The *where from* groups whose value the viewer changed (``network``, ``country``,
+            ``browser``, ``device``).
+
+    Returns:
+        Per signal a rule fixes: the value it must take and the reason, for display.
     """
     required: Required = {}
 
@@ -186,7 +210,15 @@ def required_signals(  # noqa: C901, PLR0912 - one place for every rule, in the 
 
 
 def with_attack_share(edited: pl.DataFrame) -> pl.DataFrame:
-    """Set the IP's share of earlier attack attempts from the attack-IP flag (unchanged if never seen)."""
+    """Set the IP's share of earlier attack attempts from the attack-IP flag (unchanged if never seen).
+
+    Args:
+        edited: The edited login, a one-row frame with ``attack_ip``.
+
+    Returns:
+        ``edited`` with ``ip_prior_attack_share`` set to 1 if ``attack_ip`` is on and 0 otherwise;
+        unchanged when the column is absent or null (an IP never seen before).
+    """
     if ATTACK_SHARE not in edited.columns or edited[ATTACK_SHARE][0] is None:
         return edited
     share = 1.0 if edited["attack_ip"][0] else 0.0
@@ -198,6 +230,15 @@ def typical_row(frame: pl.DataFrame, by: str, columns: Sequence[str]) -> Values:
 
     Taking one login, rather than a median per column, keeps the rules between its values (e.g. an IP never
     has more accounts than its network). An empty frame gives no values.
+
+    Args:
+        frame: Logins with ``event_id``, ``by`` and ``columns``.
+        by: Column to sort by; nulls go last.
+        columns: Columns to return.
+
+    Returns:
+        The values of ``columns`` of the middle login, by column name; empty when ``frame`` is
+        empty.
     """
     if frame.is_empty():
         return {}

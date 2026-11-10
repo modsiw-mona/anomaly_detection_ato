@@ -38,7 +38,14 @@ _IPV4 = r"^(?P<a>\d{1,3})\.(?P<b>\d{1,3})\.(?P<c>\d{1,3})\.(?P<d>\d{1,3})$"
 
 
 def scan_raw(raw_file: Path) -> pl.LazyFrame:
-    """Lazily scan a raw CSV with every column as text, so no type is guessed."""
+    """Lazily scan a raw CSV with every column as text, so no type is guessed.
+
+    Args:
+        raw_file: CSV file with a header row.
+
+    Returns:
+        A lazy frame with the file's own column names, every column of type ``String``.
+    """
     return pl.scan_csv(raw_file, infer_schema=False)
 
 
@@ -52,7 +59,18 @@ def _ipv4_to_int(column: str) -> pl.Expr:
 
 
 def artefact_flag(artefact: Artefact) -> pl.Expr:
-    """Boolean expression that is True where ``artefact`` applies (never null)."""
+    """Boolean expression that is True where ``artefact`` applies (never null).
+
+    An ``at_least`` artefact applies where the field, read as an integer, is at least the
+    declared value; an ``in_network`` artefact applies where the field is a dotted IPv4 address
+    inside the declared network. A value that cannot be read that way counts as False.
+
+    Args:
+        artefact: Declared artefact; its ``field`` is read under its standard name.
+
+    Returns:
+        A polars expression named after ``artefact.name``.
+    """
     match artefact.kind:
         case "at_least":
             flag = pl.col(artefact.field).cast(pl.Int64, strict=False) >= artefact.value
@@ -65,13 +83,35 @@ def artefact_flag(artefact: Artefact) -> pl.Expr:
 
 
 def mapped_fields(config: DatasetConfig) -> list[str]:
-    """Standard fields the dataset provides (labels included), in canonical order."""
+    """Standard fields the dataset provides (labels included), in canonical order.
+
+    Args:
+        config: Dataset configuration.
+
+    Returns:
+        The names of the canonical fields mapped in ``columns`` or ``labels``, in the order of
+        :data:`data.schema.FIELDS`.
+    """
     mapped = config.rename_map().values()
     return [f.name for f in FIELDS if f.name in mapped]
 
 
 def storage_dtype(field: str, config: DatasetConfig) -> pl.DataType:
-    """Storage type of a standard field in the intermediate dataset."""
+    """Storage type of a standard field in the intermediate dataset.
+
+    Args:
+        field: Canonical field name.
+        config: Dataset configuration; it decides whether an identifier is stored as ``Int64``
+            or ``String``.
+
+    Returns:
+        The polars type for the field's kind: ``Int64`` or ``String`` for identifiers,
+        ``Datetime("ms")`` for the timestamp, ``Boolean``, ``Categorical``, ``Float64`` for
+        numbers and ``String`` for text.
+
+    Raises:
+        KeyError: If ``field`` is not a canonical field.
+    """
     match FIELDS_BY_NAME[field].kind:
         case Kind.IDENTIFIER:
             is_int = config.identifier_dtypes.get(field) == "Int64"
@@ -111,7 +151,20 @@ def _typed(field: str, config: DatasetConfig) -> pl.Expr:
 
 
 def standardise(raw: pl.LazyFrame, config: DatasetConfig) -> pl.LazyFrame:
-    """Apply steps 1-5 of the module docstring to a raw, all-text frame."""
+    """Apply steps 1-5 of the module docstring to a raw, all-text frame.
+
+    The conversions are lazy: a value that does not parse raises only when the frame is
+    collected or written.
+
+    Args:
+        raw: Raw dataset with its own column names, every column as text (see :func:`scan_raw`).
+        config: Dataset configuration (the translation file).
+
+    Returns:
+        One row per raw row, in file order: ``event_id`` (the row's position in the raw file),
+        every mapped field under its standard name and storage type, then one boolean column
+        per declared artefact.
+    """
     fields = mapped_fields(config)
     source_of = {canonical: source for source, canonical in config.rename_map().items()}
 
@@ -137,6 +190,15 @@ def publish(partial: Path, out_file: Path, check: Check | None = None) -> None:
 
     If ``check`` raises, the partial file is removed and ``out_file`` is left as it was, so a
     rejected rebuild never replaces a good output.
+
+    Args:
+        partial: Finished file to publish, usually ``<out_file>.part``.
+        out_file: Final path; an existing file there is replaced.
+        check: Function given the path of ``partial``; raising rejects it. None publishes
+            without a check.
+
+    Raises:
+        BaseException: Whatever ``check`` raises, re-raised after ``partial`` is removed.
     """
     if check is not None:
         try:
@@ -148,7 +210,15 @@ def publish(partial: Path, out_file: Path, check: Check | None = None) -> None:
 
 
 def intermediate_path(config: DatasetConfig, data_dir: Path) -> Path:
-    """Where the intermediate parquet for ``config`` lives."""
+    """Where the intermediate parquet for ``config`` lives.
+
+    Args:
+        config: Dataset configuration; its ``name`` names the file.
+        data_dir: Root of the data layout (``<repo>/data``).
+
+    Returns:
+        ``<data_dir>/02_intermediate/<name>.parquet``.
+    """
     return data_dir / "02_intermediate" / f"{config.name}.parquet"
 
 
@@ -159,6 +229,16 @@ def build_intermediate(
 
     The file is written to ``<out_file>.part`` and renamed only when complete and, if ``check`` is
     given, only after ``check`` accepts it (see :func:`publish`).
+
+    Args:
+        config: Dataset configuration (the translation file).
+        raw_file: Raw CSV file, as extracted into ``data/01_raw``.
+        out_file: Path of the parquet file to write; its directory is created if needed.
+        check: Function given the path of the finished ``.part`` file; raising rejects the file
+            and keeps any previous output. None publishes without a check.
+
+    Returns:
+        ``out_file``.
     """
     out_file.parent.mkdir(parents=True, exist_ok=True)
     partial = out_file.with_name(out_file.name + ".part")
@@ -169,7 +249,17 @@ def build_intermediate(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point."""
+    """Command-line entry point: build the intermediate dataset of ``--dataset``.
+
+    Reads the raw file from ``data/01_raw`` and prints the path of the written parquet file,
+    relative to the repository.
+
+    Args:
+        argv: Command-line arguments; None reads them from sys.argv.
+
+    Returns:
+        The process exit code (0 on success). Failures raise instead of returning a code.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     args = parser.parse_args(argv)

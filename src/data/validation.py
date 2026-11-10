@@ -82,7 +82,18 @@ def _takeover_implies_success(data: PolarsData) -> pl.LazyFrame:
 
 
 def build_schema(config: DatasetConfig) -> pa.DataFrameSchema:
-    """Pandera schema for the intermediate dataset of ``config``."""
+    """Pandera schema for the intermediate dataset of ``config``.
+
+    Args:
+        config: Dataset configuration; it gives the mapped fields, their storage types, the
+            artefact flags and the dataset-specific rules.
+
+    Returns:
+        A strict schema: ``event_id`` (unique), every mapped field with its storage type and
+        rules (required fields and labels never null), every artefact flag, uniqueness of
+        ``unique_together``, and, when ``label_ato`` is mapped, the warning-level check that a
+        takeover is on a successful login.
+    """
     columns: dict[str, pa.Column] = {EVENT_ID: pa.Column(pl.UInt32, unique=True)}
     for field in mapped_fields(config):
         role = FIELDS_BY_NAME[field].role
@@ -114,6 +125,13 @@ def build_schema(config: DatasetConfig) -> pa.DataFrameSchema:
 
 def validate_intermediate(frame: pl.DataFrame, config: DatasetConfig) -> pl.DataFrame:
     """Validate ``frame`` against :func:`build_schema`, collecting every failure.
+
+    Args:
+        frame: Intermediate dataset, as written by :func:`data.intermediate.build_intermediate`.
+        config: Dataset configuration the dataset was built from.
+
+    Returns:
+        The validated frame.
 
     Raises:
         pandera.errors.SchemaErrors: If any error-level rule fails (all failures are listed).

@@ -26,6 +26,7 @@ def _features(seed: int = 0) -> pl.DataFrame:
 
 
 def test_folds_group_users_and_spread_takeovers_evenly() -> None:
+    """``assign_folds`` groups by user, spreads takeover users evenly and is reproducible."""
     features = _features()
     folds = assign_folds(features, n_folds=N_FOLDS, n_repeats=N_REPEATS)
     assert folds["user_id"].is_unique().all()
@@ -38,6 +39,7 @@ def test_folds_group_users_and_spread_takeovers_evenly() -> None:
 
 @pytest.mark.parametrize("seed", range(5))
 def test_average_precision_matches_scikit_learn_with_ties(seed: int) -> None:
+    """``average_precision_from_positives`` equals scikit-learn's value, ties included."""
     rng = np.random.default_rng(seed)
     y = rng.random(5_000) < PREVALENCE
     score = rng.integers(0, 20, size=y.size).astype(float) + 3 * y  # many ties, some signal
@@ -46,6 +48,7 @@ def test_average_precision_matches_scikit_learn_with_ties(seed: int) -> None:
 
 
 def test_budget_metrics_on_a_perfect_and_a_constant_score() -> None:
+    """Budget metrics are exact for a perfect score and share ties at random for a constant one."""
     y = np.zeros(10_000, dtype=bool)
     y[:5] = True
     perfect = evaluate(y, y.astype(float))
@@ -58,6 +61,7 @@ def test_budget_metrics_on_a_perfect_and_a_constant_score() -> None:
 
 
 def test_bootstrap_interval_contains_the_estimate_and_is_reproducible() -> None:
+    """The PR-AUC bootstrap interval contains the point estimate and repeats exactly."""
     rng = np.random.default_rng(1)
     y = rng.random(20_000) < RARE_PREVALENCE
     score = rng.normal(size=y.size) + 2 * y
