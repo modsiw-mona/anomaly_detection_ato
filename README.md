@@ -63,11 +63,11 @@ A local [Streamlit](https://streamlit.io/) app scores a login with the selected 
 (`127.0.0.1`), with Streamlit's usage statistics turned off (`.streamlit/config.toml`).
 
 1. After [setting up the environment](#set-up-the-environment) (including `brew install libomp` on macOS), build
-   the data and the model once (each step is idempotent; the notebooks take ~70 and ~2 minutes):
+   the data and the model once (each step is idempotent; the notebook takes ~2 minutes):
 
     ```bash
     make feature_pipeline   # download, intermediate data, features, split; validates each output
-    make notebooks_run NB=notebooks/5-models/06-sap-model_selection-2026_11_03.ipynb
+    make training_pipeline  # the selected model, validated, with its thresholds (about 6 minutes)
     make notebooks_run NB=notebooks/6-interpretation/07-sap-model_interpretation-2026_11_04.ipynb
     ```
 
@@ -128,7 +128,7 @@ uv add --group dev plotly
 │   ├── data                            # download, intermediate data, features, split, validation
 │   ├── model                           # baselines, evaluation, Freeman model, selection, friction
 │   ├── inference                       # scoring, alert tiers, explanations, what-if rules
-│   └── pipelines                       # feature pipeline; training and inference pipelines (next)
+│   └── pipelines                       # feature and training pipelines; inference pipeline (next)
 ├── tests                               # pytest suite, mirrors src/
 ├── Makefile                            # environment, data pipeline, demo, tests, checks
 └── pyproject.toml                      # dependencies (uv)
