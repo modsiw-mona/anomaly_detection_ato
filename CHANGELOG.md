@@ -49,6 +49,10 @@ to its pull request.
   validating each output with Pandera before the next step (new schemas for the feature table and the split),
   a drift check between the development and test sides, and a report per run.
   ([#51](https://github.com/modsiw-mona/anomaly_detection_ato/pull/51))
+- Training pipeline (`make training_pipeline`): trains the selected configuration (`conf/training/rba.yaml`)
+  on the development side, sets the alert thresholds, checks the model against validation gates before saving
+  it, and writes a record of every run. The tuned forest moves from notebook 06 to `src/model/selection.py`.
+  ([#53](https://github.com/modsiw-mona/anomaly_detection_ato/pull/53))
 
 ### Changed
 

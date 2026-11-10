@@ -1,0 +1,41 @@
+# Training pipeline configuration for the RBA dataset (src/pipelines/training_pipeline/).
+#
+# The model, features and training options are the configuration selected in issue #6 (notebook
+# 5-models/06), with the same seeds and the same user folds, so the pipeline rebuilds that model.
+# The gate limits are fixed here, before a run; a model that fails a blocking gate is not saved.
+
+name: "random forest (leaf 2) + campaign + travel, balanced"
+model: "random forest (leaf 2, features sqrt)"
+feature_groups: [history, user_novelty, global_rarity, sharing, failures, attack_ip, missingness,
+                 device, time, campaign, travel]
+balance_campaign: true          # the dominant campaign and all other takeovers weigh the same
+negative_share: 0.05            # every takeover plus 5% of the legitimate logins
+seed: 20261102                  # training sample and model
+
+folds:                          # cross-validation on the development side, grouped by user
+  n_folds: 5
+  repeats: 3                    # the 15-fold estimate of issue #6; repeat 0 sets the thresholds
+  seed: 20261102
+
+budgets:                        # share of logins per response tier, strictest first
+  "review / block": 0.001
+  "step-up": 0.01
+
+baseline:                       # the bar of issue #5, on the same folds
+  model: "logistic regression"
+  feature_groups: [history, user_novelty, global_rarity, sharing, failures, attack_ip, missingness,
+                   device, time]
+
+segments:                       # takeovers by campaign: the dominant one against the rest
+  column: country
+  value: "RO"
+  name: Romania
+
+gates:
+  min_interval_low: 0.05        # issue #6 selection rule: lower end of the PR-AUC interval
+  min_recall_at_1pct: 0.80      # issue #6 selection rule
+  min_gain_over_baseline: 0.10  # PR-AUC at least 10% above the logistic baseline
+  alert_rate_ratio: [0.5, 2.0]  # the final model's alert rate within these multiples of each budget
+  min_segment_recall_at_1pct: 0.50
+  max_seconds_per_login_in_batch: 0.001  # the course's model inference time, scoring many at once
+  max_seconds_single_login: 0.2   # one sign-in waits for its score

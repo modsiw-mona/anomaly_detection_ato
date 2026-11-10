@@ -51,11 +51,43 @@ without the checks: `make data`, `make intermediate`, `make features`, `make spl
 ## Train, evaluate and run the demo
 
 ```bash
-make notebooks_run NB=notebooks/5-models/06-sap-model_selection-2026_11_03.ipynb          # about 70 minutes
+make training_pipeline      # about 6 minutes: the selected model, validated, with its thresholds
 make notebooks_run NB=notebooks/6-interpretation/07-sap-model_interpretation-2026_11_04.ipynb
 make notebooks_run NB=notebooks/6-interpretation/08-sap-user_friction-2026_11_08.ipynb
 make demo
 ```
+
+The **training pipeline** trains only the selected configuration, written in `conf/training/rba.yaml` (model,
+features, sampling, seeds, folds, alert budgets and the limits below). Comparing model families is
+experimentation and stays in notebook `5-models/06` (about 70 minutes), which chose that configuration. The
+pipeline reads only the development side:
+
+1. Out-of-fold scores on the same user folds as the notebook: 5 folds x 3 repeats, the 15-fold estimate.
+2. The logistic baseline on the same folds.
+3. The final fit on the whole development side.
+4. The alert thresholds, from the out-of-fold scores of the first repeat.
+5. The **model validation gates**. A model that fails a blocking gate is not saved, and the previous one stays:
+
+| Gate | Condition | Blocking |
+| --- | --- | --- |
+| Selection rule of the model selection | lower end of the PR-AUC interval > 0.05; recall within the 1% budget >= 0.80 | yes |
+| Gain over the logistic baseline | PR-AUC at least 10% higher, on the same folds | yes |
+| Alert rate of the saved model | within 0.5 to 2 times each budget, on development logins | yes |
+| Each group of takeovers (the dominant campaign, the rest, first logins, returning accounts) | recall within the 1% budget >= 0.5 | yes |
+| Scoring time | at most 1 ms per login when scoring many at once (the course's condition); at most 0.2 s for a single login on its own, what a sign-in waits for | yes |
+| Weakest group | PR-AUC at least 80% of the overall one (the course's condition) | reported: takeovers outside the dominant campaign are much harder |
+| Overfitting gap, calibration (Brier score) | | reported |
+
+It saves the model, its metadata and the out-of-fold scores where the notebooks saved them, so notebooks 07 and
+08 and the demo read them unchanged. The three files are written first and renamed only then, the metadata last,
+and the inference module refuses a model file whose SHA-256 differs from its metadata, so a model never runs with
+another one's thresholds. `REPEATS=1` gives a quicker 5-fold run; notebooks 07 and 08 need the default 15 folds. Every run writes a record to `data/08_reporting/training_runs/`: the
+configuration, metrics, gates, the SHA-256 of the data and of the model, the git commit, library versions, and
+whether the model is identical to the previous one.
+
+On the RBA data the pipeline rebuilds the notebook's model **byte for byte** (same SHA-256), the 15-fold PR-AUC
+(0.4475) and the thresholds. The forest averages its trees in parallel, so a few scores may differ in the last
+bit (about 1e-16) from run to run; no threshold or response tier changes.
 
 ## Checks
 

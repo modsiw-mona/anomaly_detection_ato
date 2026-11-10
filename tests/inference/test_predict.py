@@ -1,5 +1,6 @@
 """Tests for the inference module: thresholds, tiers, saving/loading and explanations."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -141,3 +142,39 @@ def test_explanations_show_flags_as_yes_no(saved: Path, features: pl.DataFrame) 
     explanation = detector.explain(features.head(1), top=10 * len(detector.columns))[0]
     flag = explanation.filter(pl.col("input") == "attack_ip")["value"][0]
     assert flag in {"yes", "no"}
+
+
+def _copy_model(saved: Path, folder: Path, metadata: dict[str, object]) -> Path:
+    folder.mkdir(parents=True)
+    (folder / "toy_model.joblib").write_bytes(
+        (saved / "06_models" / "toy_model.joblib").read_bytes()
+    )
+    (folder / "toy_model.json").write_text(json.dumps(metadata))
+    return folder
+
+
+def test_a_model_that_does_not_match_its_metadata_is_refused(saved: Path, tmp_path: Path) -> None:
+    columns = json.loads((saved / "06_models" / "toy_model.json").read_text())["columns"]
+    folder = _copy_model(saved, tmp_path / "m", {"columns": columns, "joblib_sha256": "0" * 64})
+    with pytest.raises(ValueError, match="does not match"):
+        Detector.from_files(folder, "toy", {"step-up": 0.5})
+    digest = hashlib.sha256((folder / "toy_model.joblib").read_bytes()).hexdigest()
+    (folder / "toy_model.json").write_text(
+        json.dumps({"columns": columns, "joblib_sha256": digest})
+    )
+    assert Detector.from_files(folder, "toy", {"step-up": 0.5}).columns == columns
+
+
+def test_load_uses_the_thresholds_saved_with_the_model(saved: Path, tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    columns = json.loads((saved / "06_models" / "toy_model.json").read_text())["columns"]
+    saved_thresholds = {"review / block": 0.9, "step-up": 0.6}
+    _copy_model(saved, root / "06_models", {"columns": columns, "thresholds": saved_thresholds})
+    (root / "07_model_output").mkdir()
+    (root / "07_model_output" / "toy_dev_oof.parquet").write_bytes(
+        (saved / "07_model_output" / "toy_dev_oof.parquet").read_bytes()
+    )
+    assert Detector.load(root, "toy").thresholds == saved_thresholds
+    assert Detector.load(saved, "toy").thresholds == alert_thresholds(
+        pl.read_parquet(saved / "07_model_output" / "toy_dev_oof.parquet")["score"].to_numpy()
+    ), "without saved thresholds they are computed from the out-of-fold scores"

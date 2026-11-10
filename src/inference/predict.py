@@ -6,6 +6,7 @@ development scores goes to *review / block*, the top 1% to *step-up* (second fac
 allowed. Explanations are exact tree SHAP values, computed only when asked for.
 """
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -53,10 +54,17 @@ class Detector:
 
     @classmethod
     def load(cls, data_dir: Path, dataset: str = "rba") -> Detector:
-        """Load the model of ``dataset`` from ``data_dir/06_models`` and its thresholds."""
+        """Load the model of ``dataset`` from ``data_dir/06_models`` and its thresholds.
+
+        The thresholds are the ones saved with the model by the training pipeline, which checked
+        them; for a model saved without them (notebook 06), they are computed from the same
+        out-of-fold development scores.
+        """
         dev_scores = pl.read_parquet(data_dir / "07_model_output" / f"{dataset}_dev_oof.parquet")
         reference = np.sort(dev_scores["score"].to_numpy())
-        detector = cls.from_files(data_dir / "06_models", dataset, alert_thresholds(reference))
+        metadata = json.loads((data_dir / "06_models" / f"{dataset}_model.json").read_text())
+        thresholds = metadata.get("thresholds") or alert_thresholds(reference)
+        detector = cls.from_files(data_dir / "06_models", dataset, thresholds)
         detector.reference_scores = reference
         return detector
 
@@ -65,10 +73,19 @@ class Detector:
         """The model saved in ``folder`` with thresholds computed elsewhere (e.g. a demo bundle).
 
         The ``.joblib`` file is a pickle: load only files you produced or whose SHA-256 you checked.
+        When the metadata records the file's SHA-256, it is checked here too, so a model never
+        runs with the metadata (columns, thresholds) of another one.
+
+        Raises:
+            ValueError: If the model file does not match the SHA-256 in its metadata.
         """
         metadata = json.loads((folder / f"{dataset}_model.json").read_text())
+        model_file = folder / f"{dataset}_model.joblib"
+        expected = metadata.get("joblib_sha256")
+        if expected and hashlib.sha256(model_file.read_bytes()).hexdigest() != expected:
+            raise ValueError(f"{model_file.name} does not match the SHA-256 in its metadata")
         return cls(
-            pipeline=joblib.load(folder / f"{dataset}_model.joblib"),
+            pipeline=joblib.load(model_file),
             columns=list(metadata["columns"]),
             thresholds=dict(thresholds),
             metadata=metadata,

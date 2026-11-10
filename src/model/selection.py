@@ -124,12 +124,31 @@ def xgboost(columns: Sequence[str], seed: int = SEED) -> Pipeline:
     return _pipeline(columns, model)
 
 
+def forest(leaf: int, features: str | float) -> Callable[[Sequence[str], int], Pipeline]:
+    """Random forest with a given minimum leaf size and features per split (the tuning grid of #6)."""
+
+    def build(columns: Sequence[str], seed: int = SEED) -> Pipeline:
+        model = RandomForestClassifier(
+            n_estimators=300,
+            min_samples_leaf=leaf,
+            max_features=features,
+            class_weight="balanced_subsample",
+            n_jobs=-1,
+            random_state=seed,
+        )
+        return _pipeline(columns, model)
+
+    return build
+
+
+SELECTED = "random forest (leaf 2, features sqrt)"  # issue #6: the selected model
 SUPERVISED: dict[str, Callable[[Sequence[str], int], Pipeline]] = {
     "logistic regression": logistic_regression,
     "random forest": random_forest,
     "gradient boosting": gradient_boosting,
     "LightGBM": lightgbm,
     "XGBoost": xgboost,
+    SELECTED: forest(2, "sqrt"),
 }
 
 
