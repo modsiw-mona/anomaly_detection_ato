@@ -38,7 +38,7 @@ from pathlib import Path
 import polars as pl
 
 from data.datasets import DatasetConfig, find_repo_root, load_dataset_config
-from data.intermediate import EVENT_ID, intermediate_path, mapped_fields
+from data.intermediate import EVENT_ID, Check, intermediate_path, mapped_fields, publish
 
 logger = logging.getLogger(__name__)
 
@@ -262,14 +262,18 @@ def features_path(config: DatasetConfig, data_dir: Path) -> Path:
     return data_dir / "04_feature" / f"{config.name}_features.parquet"
 
 
-def write_features(config: DatasetConfig, data_dir: Path) -> Path:
-    """Build the feature table from the intermediate dataset and write it (``.part`` then rename)."""
+def write_features(config: DatasetConfig, data_dir: Path, *, check: Check | None = None) -> Path:
+    """Build the feature table from the intermediate dataset and write it.
+
+    Written to ``.part`` and renamed once complete and accepted by ``check``, if given
+    (:func:`data.intermediate.publish`).
+    """
     out = features_path(config, data_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_name(out.name + ".part")
     intermediate = pl.scan_parquet(intermediate_path(config, data_dir))
     build_features(intermediate, config).collect().write_parquet(partial, compression="zstd")
-    partial.replace(out)
+    publish(partial, out, check)
     logger.info("Wrote %s", out.name)
     return out
 

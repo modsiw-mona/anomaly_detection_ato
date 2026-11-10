@@ -11,6 +11,7 @@ from data.feature_validation import build_feature_schema, validate_features, val
 from data.features import build_features
 from data.split import assign_split
 from tests.data.test_features import (
+    ALL_COLUMNS,
     CATCH_ALL,
     HAND_BUILT,
     WINDOW,
@@ -90,7 +91,7 @@ def test_hand_built_features_pass() -> None:
             _on_row("user_prior_countries", pl.lit(2, pl.UInt32), _first),
             "first_login_has_no_earlier_countries",
         ),
-        (_on_row("country_change_1h", pl.lit(None, pl.Boolean)), "travel_known_after_first_login"),
+        (_on_row("country_change_1h", pl.lit(value=False), _first), "travel_null_on_first_login"),
         (_on_row("new_country", ~pl.col("new_country")), "n_new_key_signals_counts_them"),
         (
             _on_row("asn_prior_attack_share", pl.lit(None, pl.Float64), _network_seen_before),
@@ -131,9 +132,31 @@ def test_unexpected_column_and_wrong_type_are_errors(features: pl.DataFrame) -> 
     assert any(check.startswith("dtype") for check in _failed_checks(retyped))
 
 
-def test_a_dataset_without_some_fields_still_validates(features: pl.DataFrame) -> None:
-    fewer = features.drop("rtt_ms", "rtt_missing", "country", "country_change_1h")
-    assert validate_features(fewer, _config(**WINDOW)).height == features.height
+def test_unknown_country_and_network_and_a_zero_rtt_are_valid() -> None:
+    events = _random_events(400, seed=4)
+    for i, event in enumerate(events):
+        if i % 7 == 0:
+            event["country"] = None
+        if i % 11 == 0:
+            event["asn"] = None
+        event["rtt_ms"] = 0.0 if i % 5 == 0 else 120.0
+    frame = build_features(_events(events), _config(**WINDOW)).collect()
+    assert frame["country"].null_count() and frame["asn_attempts_prev24h"].null_count()
+    assert (frame["rtt_ms"] == 0).any()
+    assert validate_features(frame, _config(**WINDOW)).height == frame.height
+
+
+def test_a_dataset_without_some_fields_validates_and_keeps_its_rules() -> None:
+    columns = {k: v for k, v in ALL_COLUMNS.items() if k not in {"os", "rtt_ms", "region"}}
+    config = _config(**WINDOW, columns=columns)
+    frame = build_features(_events(_random_events(400, seed=3)), config).collect()
+    assert "new_os" not in frame.columns and "new_region" not in frame.columns
+    assert validate_features(frame, config).height == frame.height
+    returning = _returning(frame)
+    broken = _on_row("n_new_key_signals", pl.col("n_new_key_signals") + 1, lambda _: returning)
+    with pytest.raises(SchemaErrors) as caught:
+        validate_features(broken(frame), config)
+    assert "n_new_key_signals_counts_them" in caught.value.failure_cases["check"].to_list()
 
 
 def test_a_new_feature_needs_a_rule(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -154,9 +177,9 @@ def _split_failures(features: pl.DataFrame, split: pl.DataFrame) -> set[str]:
 
 @pytest.fixture
 def many_users() -> pl.DataFrame:
-    """Feature-shaped rows of 200 users, 20 of them with a takeover."""
+    """Feature-shaped rows of 200 users, 23 of them with a takeover (20% of 23 needs rounding)."""
     users = [u for u in range(200) for _ in range(3)]
-    labels = [u < 20 and i == 0 for u in range(200) for i in range(3)]  # noqa: PLR2004
+    labels = [u < 23 and i == 0 for u in range(200) for i in range(3)]  # noqa: PLR2004
     return pl.DataFrame({"user_id": users, "label_ato": labels})
 
 
@@ -197,6 +220,27 @@ def test_moving_a_user_breaks_the_test_share(many_users: pl.DataFrame) -> None:
         .alias("split")
     )
     assert "test_share_per_stratum" in _split_failures(many_users, split)
+
+
+def test_swapping_two_users_of_a_stratum_is_an_error(many_users: pl.DataFrame) -> None:
+    split = assign_split(many_users.lazy())
+    plain = split.filter(~pl.col("has_takeover"))
+    a = plain.filter(pl.col("split") == "test")["user_id"][0]
+    b = plain.filter(pl.col("split") == "dev")["user_id"][0]
+    swapped = split.with_columns(
+        pl.when(pl.col("user_id") == a)
+        .then(pl.lit("dev"))
+        .when(pl.col("user_id") == b)
+        .then(pl.lit("test"))
+        .otherwise(pl.col("split"))
+        .alias("split")
+    )
+    assert _split_failures(many_users, swapped) == {"matches_the_pre_registered_assignment"}
+
+
+def test_another_seed_is_an_error(many_users: pl.DataFrame) -> None:
+    reseeded = assign_split(many_users.lazy(), seed=7)
+    assert "matches_the_pre_registered_assignment" in _split_failures(many_users, reseeded)
 
 
 def test_unknown_side_is_an_error(many_users: pl.DataFrame) -> None:

@@ -42,7 +42,7 @@ from data.features import (
     USER,
 )
 from data.intermediate import EVENT_ID, storage_dtype
-from data.split import TEST_SHARE
+from data.split import SEED, TEST_SHARE, assign_split
 
 FrameCheck = Callable[[PolarsData], pl.LazyFrame]
 
@@ -53,10 +53,9 @@ COUNTS = (
     "asn_prior_users",
     "user_agent_prior_users",
     *FAILURE_WINDOWS.values(),
-    "asn_attempts_prev24h",
-    "asn_fails_prev24h",
     "user_prior_countries",
 )
+BURST_COUNTS = ("asn_attempts_prev24h", "asn_fails_prev24h")  # unknown when the network is
 SHARES = (
     *(f"global_share_{s}" for s in RARITY_SIGNALS),
     *(f"{s}_prior_{k}_share" for s in NETWORK_SIGNALS for k in ("fail", "attack")),
@@ -75,7 +74,7 @@ UNDEFINED_ON_FIRST = (  # nothing earlier to compare with: null on a first login
     *(f"new_{s}" for s in NOVELTY_SIGNALS),
     "n_new_key_signals",
 )
-TRAVEL = "country_change_1h"  # also unknown when the country is
+TRAVEL = "country_change_1h"  # unknown on a first login; may also be when a country is unknown
 SHARED_BY = {
     "ip": "ip_prior_users",
     "asn": "asn_prior_users",
@@ -91,6 +90,8 @@ def _feature_columns() -> dict[str, pa.Column]:
     columns: dict[str, pa.Column] = {}
     for name in COUNTS:
         columns[name] = pa.Column(pl.UInt32, required=False)  # unsigned: never negative
+    for name in BURST_COUNTS:
+        columns[name] = pa.Column(pl.UInt32, nullable=True, required=False)
     for name in SHARES:
         columns[name] = pa.Column(pl.Float64, _between(0, 1), nullable=True, required=False)
     for name in FLAGS:
@@ -108,7 +109,7 @@ def _feature_columns() -> dict[str, pa.Column]:
         "hour": pa.Column(pl.Int8, _between(0, 23), required=False),
         "weekday": pa.Column(pl.Int8, _between(1, 7), required=False),  # Monday = 1
         "device_type": pa.Column(pl.Categorical, nullable=True, required=False),
-        "rtt_ms": pa.Column(pl.Float64, pa.Check.gt(0), nullable=True, required=False),
+        "rtt_ms": pa.Column(pl.Float64, pa.Check.ge(0), nullable=True, required=False),
     }
     known = {c for group in FEATURE_GROUPS.values() for c in group}
     missing = known - columns.keys()
@@ -130,8 +131,6 @@ def _rule(rule: pl.Expr, needs: tuple[str, ...]) -> FrameCheck:
 
 def _frame_checks() -> list[pa.Check]:
     first = pl.col(FIRST)
-    key = tuple(f"new_{s}" for s in KEY_SIGNALS)
-    shares = tuple(f"{s}_prior_{k}_share" for s in NETWORK_SIGNALS for k in ("fail", "attack"))
     rules: dict[str, tuple[pl.Expr, tuple[str, ...]]] = {
         "first_login_has_no_earlier_logins": (
             first == (pl.col("prior_successes") == 0),
@@ -154,22 +153,7 @@ def _frame_checks() -> list[pa.Check]:
             pl.col("rtt_missing") == pl.col("rtt_ms").is_null(),
             ("rtt_missing", "rtt_ms"),
         ),
-        "attack_share_known_with_fail_share": (
-            pl.all_horizontal(
-                pl.col(f"{s}_prior_attack_share").is_null()
-                == pl.col(f"{s}_prior_fail_share").is_null()
-                for s in NETWORK_SIGNALS
-            ),
-            shares,
-        ),
-        "travel_known_after_first_login": (
-            pl.col(TRAVEL).is_null() == (first | pl.col("country").is_null()),
-            (FIRST, TRAVEL, "country"),
-        ),
-        "n_new_key_signals_counts_them": (
-            pl.col("n_new_key_signals") == pl.sum_horizontal(key).cast(pl.UInt8),
-            ("n_new_key_signals", *key),
-        ),
+        "travel_null_on_first_login": (~first | pl.col(TRAVEL).is_null(), (FIRST, TRAVEL)),
         **{
             f"{column}_null_exactly_on_first_login": (
                 pl.col(column).is_null() == first,
@@ -185,7 +169,35 @@ def _frame_checks() -> list[pa.Check]:
             for signal, users in SHARED_BY.items()
         },
     }
-    return [pa.Check(_rule(rule, needs), name=name) for name, (rule, needs) in rules.items()]
+    checks = [pa.Check(_rule(rule, needs), name=name) for name, (rule, needs) in rules.items()]
+    return [
+        *checks,
+        pa.Check(_counts_key_signals, name="n_new_key_signals_counts_them"),
+        pa.Check(_attack_share_known_with_fail_share, name="attack_share_known_with_fail_share"),
+    ]
+
+
+def _counts_key_signals(data: PolarsData) -> pl.LazyFrame:
+    """The count of new key signals adds up the key signals the dataset has (any of them)."""
+    present = set(data.lazyframe.collect_schema())
+    key = [f"new_{s}" for s in KEY_SIGNALS if f"new_{s}" in present]
+    if "n_new_key_signals" not in present or not key:
+        return data.lazyframe.select(pl.lit(value=True))
+    counted = pl.col("n_new_key_signals") == pl.sum_horizontal(key).cast(pl.UInt8)
+    return data.lazyframe.select(counted.fill_null(value=True))
+
+
+def _attack_share_known_with_fail_share(data: PolarsData) -> pl.LazyFrame:
+    """Both shares of a network come from the same earlier attempts: known or unknown together."""
+    present = set(data.lazyframe.collect_schema())
+    pairs = [
+        (pl.col(f"{s}_prior_attack_share"), pl.col(f"{s}_prior_fail_share"))
+        for s in NETWORK_SIGNALS
+        if {f"{s}_prior_attack_share", f"{s}_prior_fail_share"} <= present
+    ]
+    if not pairs:
+        return data.lazyframe.select(pl.lit(value=True))
+    return data.lazyframe.select(pl.all_horizontal(a.is_null() == f.is_null() for a, f in pairs))
 
 
 def _not_in(values: list[int] | list[str]) -> pa.Check:
@@ -239,19 +251,33 @@ def validate_features(frame: pl.DataFrame, config: DatasetConfig) -> pl.DataFram
 
 
 def validate_split(
-    features: pl.LazyFrame, split: pl.DataFrame, *, test_share: float = TEST_SHARE
+    features: pl.LazyFrame,
+    split: pl.DataFrame,
+    *,
+    test_share: float = TEST_SHARE,
+    seed: int = SEED,
 ) -> pl.DataFrame:
     """Check the user -> side assignment against the feature table it was computed from.
 
+    Besides coverage, flags and shares, every user must be on the side the pre-registered rule
+    (:func:`data.split.assign_split` with ``test_share`` and ``seed``) gives, so an edited,
+    re-seeded or stale split is caught.
+
     Returns:
         One row per user: ``user_id``, ``labelled`` (has a takeover in the feature table, null if
-        the user is not in it), ``has_takeover`` and ``split`` (null if the user has no side).
+        the user is not in it), ``has_takeover``, ``split`` (null if the user has no side) and
+        ``registered`` (the side of the pre-registered rule).
 
     Raises:
         pandera.errors.SchemaErrors: If any rule fails (all failures are listed).
     """
     users = features.group_by(USER).agg(pl.col(LABEL).any().alias("labelled")).collect()
-    frame = users.join(split, on=USER, how="full", coalesce=True)
+    registered = assign_split(features, test_share=test_share, seed=seed).select(
+        USER, pl.col("split").alias("registered")
+    )
+    frame = users.join(split, on=USER, how="full", coalesce=True).join(
+        registered, on=USER, how="left"
+    )
     expected = {  # the same rounding as data.split.assign_split
         flag: round(test_share * frame.filter(pl.col("labelled") == flag).height)
         for flag in (True, False)
@@ -261,6 +287,11 @@ def validate_split(
         in_test = (pl.col("split") == "test").sum().over("labelled")
         wanted = pl.col("labelled").replace_strict(expected, return_dtype=pl.Int64)
         return data.lazyframe.select((in_test == wanted).fill_null(value=True))
+
+    def pre_registered(data: PolarsData) -> pl.LazyFrame:
+        return data.lazyframe.select(
+            (pl.col("split") == pl.col("registered")).fill_null(value=True)
+        )
 
     def agrees(data: PolarsData) -> pl.LazyFrame:
         return data.lazyframe.select(
@@ -273,10 +304,12 @@ def validate_split(
             "labelled": pa.Column(pl.Boolean),  # null: a user without logins in the feature table
             "has_takeover": pa.Column(pl.Boolean),
             "split": pa.Column(pl.String, pa.Check.isin(["dev", "test"])),  # null: no side
+            "registered": pa.Column(pl.String, nullable=True),  # null: user not in the features
         },
         checks=[
             pa.Check(agrees, name="takeover_flag_agrees_with_labels"),
             pa.Check(stratum_share, name="test_share_per_stratum"),
+            pa.Check(pre_registered, name="matches_the_pre_registered_assignment"),
         ],
         strict=True,
         name="split",

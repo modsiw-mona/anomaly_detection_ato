@@ -42,8 +42,10 @@ make feature_pipeline VALIDATE_ONLY=1  # only check the existing outputs (about 
 | Development / test split by user | `data/05_model_input/` | every user on exactly one side, the pre-registered test share |
 | Development against test | report | each feature's drift (Kolmogorov-Smirnov or total variation) below 0.2 |
 
-A broken rule stops the pipeline and lists every failing row. Each run writes a report (row counts, warnings, the
-drift table, timings) to `data/08_reporting/rba_feature_pipeline.json`. The steps can also run one at a time,
+A rebuilt output replaces the previous one only after it passes its checks, so a broken rule stops the pipeline
+and leaves the earlier outputs in place; the log counts the failing rows of each rule. Each run writes a report
+(row counts, warnings, the drift table, timings, and on failure the step and the error) to
+`data/08_reporting/rba_feature_pipeline.json`. The steps can also run one at a time,
 without the checks: `make data`, `make intermediate`, `make features`, `make split`.
 
 ## Train, evaluate and run the demo

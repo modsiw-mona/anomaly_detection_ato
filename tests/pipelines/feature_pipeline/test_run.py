@@ -114,6 +114,28 @@ def test_a_broken_output_stops_the_pipeline_and_the_report_says_where(
     report = _report(config, data_dir)
     assert report["status"] == "failed"
     assert [s["step"] for s in report["steps"]] == ["intermediate dataset"]
+    assert report["failed_step"] == "feature table"
+    assert "in_range(0, 23)" in report["error"]
+
+
+def test_a_rebuild_that_fails_its_checks_keeps_the_previous_output(
+    config: DatasetConfig, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pipeline.run(config, data_dir, drift_limit=1.01)
+    path = features_path(config, data_dir)
+    before = pl.read_parquet(path)
+
+    def reject(*_: object) -> pl.DataFrame:
+        raise ValueError("rejected")
+
+    monkeypatch.setattr(pipeline, "validate_features", reject)
+    with pytest.raises(ValueError, match="rejected"):
+        pipeline.run(config, data_dir, drift_limit=1.01)
+    assert pl.read_parquet(path).equals(before)
+    assert not path.with_name(path.name + ".part").exists()
+    report = _report(config, data_dir)
+    assert report["failed_step"] == "feature table"
+    assert report["error"] == "ValueError: rejected"
 
 
 def test_drift_over_the_limit_stops_the_pipeline(config: DatasetConfig, data_dir: Path) -> None:
