@@ -48,7 +48,7 @@ to its pull request.
 - Feature pipeline (`make feature_pipeline`): download, intermediate dataset, features and split in order,
   validating each output with Pandera before the next step (new schemas for the feature table and the split),
   a drift check between the development and test sides, and a report per run.
-  ([#50](https://github.com/modsiw-mona/anomaly_detection_ato/issues/50))
+  ([#51](https://github.com/modsiw-mona/anomaly_detection_ato/pull/51))
 
 ### Changed
 
