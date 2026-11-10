@@ -1,4 +1,4 @@
-.PHONY: install_env data intermediate features split demo notebooks_run test test_verbose test_coverage docs docs_test clean_env switch_main clean_branchs check lint help pre-commit_update demo_bundle
+.PHONY: install_env data intermediate features split feature_pipeline demo notebooks_run test test_verbose test_coverage docs docs_test clean_env switch_main clean_branchs check lint help pre-commit_update demo_bundle
 
 ####----Basic configurations----####
 
@@ -25,6 +25,10 @@ features: ## Build data/04_feature/<dataset>_features.parquet from the intermedi
 split: ## Assign users to dev/test (grouped by user, stratified by label) (DATASET=rba)
 	@echo "Splitting $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m data.split --dataset $(or $(DATASET),rba)
+
+feature_pipeline: ## Run the feature pipeline: data -> intermediate -> features -> split, validating each output (DATASET=rba; VALIDATE_ONLY=1 checks existing outputs)
+	@echo "Running the feature pipeline for $(or $(DATASET),rba)..."
+	PYTHONPATH=src uv run python -m pipelines.feature_pipeline.run --dataset $(or $(DATASET),rba) $(if $(VALIDATE_ONLY),--validate-only)
 
 demo: ## Run the Streamlit risk demo (needs the model from notebooks 06 and 07)
 	PYTHONPATH=src ATO_DATASET=$(or $(DATASET),rba) ATO_DEMO_OFFLINE=1 uv run streamlit run notebooks/7-deploy/app.py \

@@ -26,14 +26,25 @@ dataset is downloaded from its official source and verified; nothing is uploaded
 
 ## Build the data
 
-Each step is idempotent and writes to `data/` (gitignored):
+The **feature pipeline** runs the data steps in order and validates each output before the next step uses it.
+Everything is written to `data/` (gitignored):
 
 ```bash
-make data           # download from Zenodo (9 GB unpacked), verify the published checksum -> data/01_raw/
-make intermediate   # standard names, types, nulls, flags                       -> data/02_intermediate/
-make features       # past-only behavioural features                            -> data/04_feature/
-make split          # development / test split by user                          -> data/05_model_input/
+make feature_pipeline                  # all the steps below, with the checks
+make feature_pipeline VALIDATE_ONLY=1  # only check the existing outputs (about 30 seconds)
 ```
+
+| Step | Output | Checked before going on |
+| --- | --- | --- |
+| Download from Zenodo (9 GB unpacked) | `data/01_raw/` | the published checksum; safe extraction |
+| Standard names, types, nulls, flags | `data/02_intermediate/` | types, required fields, unique rows, the dataset's value rules |
+| Past-only behavioural features | `data/04_feature/` | types and ranges, nulls only on first logins, the label window, no catch-all account, the relations that follow from each definition |
+| Development / test split by user | `data/05_model_input/` | every user on exactly one side, the pre-registered test share |
+| Development against test | report | each feature's drift (Kolmogorov-Smirnov or total variation) below 0.2 |
+
+A broken rule stops the pipeline and lists every failing row. Each run writes a report (row counts, warnings, the
+drift table, timings) to `data/08_reporting/rba_feature_pipeline.json`. The steps can also run one at a time,
+without the checks: `make data`, `make intermediate`, `make features`, `make split`.
 
 ## Train, evaluate and run the demo
 
