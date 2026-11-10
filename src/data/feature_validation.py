@@ -215,8 +215,11 @@ def _in_window(start: dt.date, end: dt.date) -> pa.Check:
     )
 
 
-def build_feature_schema(config: DatasetConfig) -> pa.DataFrameSchema:
-    """Pandera schema for the feature table of ``config``."""
+def build_feature_schema(config: DatasetConfig, *, labelled: bool = True) -> pa.DataFrameSchema:
+    """Pandera schema for the feature table of ``config``.
+
+    With ``labelled=False`` the label column is not required: a batch of logins to score has none.
+    """
     catch_all: list[int] | list[str] = list(config.catch_all_user_ids)
     if storage_dtype(USER, config) == pl.Int64():
         catch_all = [int(i) for i in catch_all]
@@ -228,7 +231,7 @@ def build_feature_schema(config: DatasetConfig) -> pa.DataFrameSchema:
             storage_dtype(TIME, config),
             checks=[_in_window(*config.label_window)] if config.label_window else [],
         ),
-        LABEL: pa.Column(pl.Boolean),
+        LABEL: pa.Column(pl.Boolean, required=labelled),
         **{
             c: pa.Column(storage_dtype(c, config), nullable=True, required=False)
             for c in CONTEXT_COLUMNS
@@ -240,13 +243,17 @@ def build_feature_schema(config: DatasetConfig) -> pa.DataFrameSchema:
     )
 
 
-def validate_features(frame: pl.DataFrame, config: DatasetConfig) -> pl.DataFrame:
+def validate_features(
+    frame: pl.DataFrame, config: DatasetConfig, *, labelled: bool = True
+) -> pl.DataFrame:
     """Validate the feature table against :func:`build_feature_schema`, collecting every failure.
 
     Raises:
         pandera.errors.SchemaErrors: If any rule fails (all failures are listed).
     """
-    validated: pl.DataFrame = build_feature_schema(config).validate(frame, lazy=True)
+    validated: pl.DataFrame = build_feature_schema(config, labelled=labelled).validate(
+        frame, lazy=True
+    )
     return validated
 
 

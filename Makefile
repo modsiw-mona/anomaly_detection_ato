@@ -38,9 +38,12 @@ inference_pipeline: ## Score a side of the split with the saved model: scores, r
 	@echo "Running the inference pipeline for $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m pipelines.inference_pipeline.run --dataset $(or $(DATASET),rba) --side $(or $(SIDE),test)
 
-pipelines: feature_pipeline training_pipeline inference_pipeline ## Run the three FTI pipelines in order (feature -> training -> inference)
+pipelines: ## Run the three FTI pipelines in order (feature -> training -> inference); a failure stops the chain
+	$(MAKE) feature_pipeline
+	$(MAKE) training_pipeline
+	$(MAKE) inference_pipeline
 
-demo: ## Run the Streamlit risk demo (needs the model from notebooks 06 and 07)
+demo: ## Run the Streamlit risk demo (needs make pipelines, or the notebooks' outputs)
 	PYTHONPATH=src ATO_DATASET=$(or $(DATASET),rba) ATO_DEMO_OFFLINE=1 uv run streamlit run notebooks/7-deploy/app.py \
 		--server.address=127.0.0.1 --server.headless=true --browser.gatherUsageStats=false
 

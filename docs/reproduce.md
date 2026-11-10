@@ -94,10 +94,12 @@ whether the model is identical to the previous one.
 
 The **inference pipeline** scores a batch of logins with the saved model, the way a security team would score
 the previous day's logins (the demo scores one login at a time with the same module). It loads the model only if
-its SHA-256 matches the metadata, validates the batch with the feature table's schema, compares it with the
-development side (drift is reported, not blocking: a service keeps answering), and writes every login's score
-and response tier to `data/07_model_output/` with a report in `data/08_reporting/rba_inference_pipeline.json`. It
-never uses the labels: measuring the model on the test side is the final evaluation's job, done once. On the
+its SHA-256 matches the metadata, reads the batch **without its label column**, validates it with the feature
+table's schema, compares the model's inputs with the development side (drift is reported, not blocking: a
+service keeps answering), and writes every login's score and response tier to `data/07_model_output/` with a
+report in `data/08_reporting/rba_inference_pipeline.json`. Measuring the model on the test side is the final
+evaluation's job, done once. A run first removes the outputs of the previous one, so a failed run never leaves
+scores of another model behind. `SIDE=dev` scores the development side, in-sample, and the report says so. On the
 test side it flags 0.094% of logins for review or block and 0.95% for a second factor or stricter, against
 budgets of 0.1% and 1%.
 

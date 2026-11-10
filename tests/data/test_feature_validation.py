@@ -159,6 +159,15 @@ def test_a_dataset_without_some_fields_validates_and_keeps_its_rules() -> None:
     assert "n_new_key_signals_counts_them" in caught.value.failure_cases["check"].to_list()
 
 
+def test_a_batch_to_score_needs_no_label(features: pl.DataFrame) -> None:
+    unlabelled = features.drop("label_ato")
+    assert (
+        validate_features(unlabelled, _config(**WINDOW), labelled=False).height == features.height
+    )
+    with pytest.raises(SchemaErrors):
+        validate_features(unlabelled, _config(**WINDOW))
+
+
 def test_a_new_feature_needs_a_rule(monkeypatch: pytest.MonkeyPatch) -> None:
     groups = {**feature_definitions.FEATURE_GROUPS, "new": ("brand_new_feature",)}
     monkeypatch.setattr("data.feature_validation.FEATURE_GROUPS", groups)

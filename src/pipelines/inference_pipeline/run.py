@@ -6,18 +6,20 @@ with the same inference module (``inference.predict``).
 
 1. **Model**: loaded through :class:`inference.predict.Detector`, which refuses a model file whose
    SHA-256 differs from its metadata and uses the thresholds saved with it.
-2. **Batch**: a side of the split from the feature table (the test side by default), validated with
-   the feature table's schema (:func:`data.feature_validation.validate_features`) before scoring.
-3. **Drift**: the batch against the development side the model learned from, feature by feature
+2. **Batch**: a side of the split from the feature table (the test side by default), read
+   **without its labels** and validated with the feature table's schema
+   (:func:`data.feature_validation.validate_features`) before scoring.
+3. **Drift**: the batch against the development side the model learned from, on the model's inputs
    (:mod:`data.drift`). Drift is **reported, not blocking**: a service keeps answering and the
    report tells the team to look; the feature pipeline is where drift between the sides stops a run.
 4. **Scores and tiers**: every login's score and response tier (allow, step-up, review / block).
 
 Outputs: ``data/07_model_output/<dataset>_<side>_scores.parquet`` (``event_id``, ``score``: the file
 notebook 07 wrote and the demo bundle reads), ``<dataset>_<side>_predictions.parquet`` (plus the
-tier) and a report in ``data/08_reporting/<dataset>_inference_pipeline.json`` (rows, logins per tier
+tier), written together, and a report in ``data/08_reporting/<dataset>_inference_pipeline.json`` (rows, logins per tier
 against each budget, drift, model SHA-256, timings). The labels are never used: measuring the
-model on the test side is the final evaluation's job (notebook 07), done once.
+model on the test side is the final evaluation's job (notebook 07), done once. The outputs of an
+earlier run are removed when a run starts, so a failed run leaves no stale scores behind.
 
 Usage::
 
@@ -38,7 +40,7 @@ from pandera.errors import SchemaErrors
 from data.datasets import DatasetConfig, find_repo_root, load_dataset_config
 from data.drift import DRIFT_LIMIT, drift_report
 from data.feature_validation import validate_features
-from data.features import FEATURE_GROUPS
+from data.features import LABEL
 from data.intermediate import publish
 from data.split import load_side
 from inference.predict import ALLOW, BUDGETS, Detector
@@ -62,11 +64,27 @@ def report_path(config: DatasetConfig, data_dir: Path) -> Path:
     return data_dir / "08_reporting" / f"{config.name}_inference_pipeline.json"
 
 
-def _write(frame: pl.DataFrame, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(path.name + ".part")
-    frame.write_parquet(partial)
-    publish(partial, path)
+def _read_batch(config: DatasetConfig, data_dir: Path, side: str) -> pl.DataFrame:
+    """The logins of one side, without the label column: scoring can never use it."""
+    batch = load_side(config, data_dir, side).drop(LABEL).collect()
+    if batch.is_empty():
+        raise ValueError(f"the {side} side has no logins to score")
+    return batch
+
+
+def _write_together(frames: dict[str, pl.DataFrame], paths: dict[str, Path]) -> None:
+    """Write every file next to its target first, then rename them all: never a mixed pair."""
+    partial = {name: path.with_name(path.name + ".part") for name, path in paths.items()}
+    try:
+        for name, frame in frames.items():
+            paths[name].parent.mkdir(parents=True, exist_ok=True)
+            frame.write_parquet(partial[name])
+    except BaseException:
+        for path in partial.values():
+            path.unlink(missing_ok=True)
+        raise
+    for name in frames:
+        publish(partial[name], paths[name])
 
 
 def run(
@@ -78,18 +96,27 @@ def run(
 ) -> dict[str, Any]:
     """Score one side of the split with the saved model; return the report.
 
+    The outputs of an earlier run are removed first, so a failed run never leaves scores of another
+    model next to the current one. Scoring the development side is in-sample (the model was trained
+    on it) and is marked so in the report.
+
     Raises:
         pandera.errors.SchemaErrors: If the batch breaks the feature table's schema (nothing is
             scored).
-        ValueError: If ``side`` is unknown or the model file does not match its metadata.
+        ValueError: If ``side`` is unknown, the batch is empty, or the model file does not match
+            its metadata.
     """
     if side not in SIDES:
         raise ValueError(f"side must be one of {SIDES}")
     started = dt.datetime.now(dt.UTC)
+    paths = output_paths(config, data_dir, side)
+    for path in paths.values():
+        path.unlink(missing_ok=True)
     report: dict[str, Any] = {
         "dataset": config.name,
         "started": started.isoformat(timespec="seconds"),
         "side": side,
+        "in_sample": side == "dev",
         "status": "failed",
         "seconds": {},
     }
@@ -102,13 +129,13 @@ def run(
         }
 
         clock = time.perf_counter()
-        batch = load_side(config, data_dir, side).collect()
-        validate_features(batch, config)
+        batch = _read_batch(config, data_dir, side)
+        validate_features(batch, config, labelled=False)
         report["rows"] = batch.height
         report["seconds"]["read_and_validate"] = round(time.perf_counter() - clock, 1)
 
         clock = time.perf_counter()
-        columns = [c for group in FEATURE_GROUPS.values() for c in group if c in batch.columns]
+        columns = detector.columns  # only the model's inputs can move its scores
         development = load_side(config, data_dir, "dev").select(columns).collect()
         drift = drift_report(development, batch.select(columns), columns, limit=drift_limit)
         drifted = drift.filter(~pl.col("within_limit"))["column"].to_list()
@@ -128,9 +155,9 @@ def run(
         tiers = detector.tiers(scores)
         report["seconds"]["scoring"] = round(time.perf_counter() - clock, 1)
         predictions = pl.DataFrame({"event_id": batch["event_id"], "score": scores, "tier": tiers})
-        paths = output_paths(config, data_dir, side)
-        _write(predictions.select("event_id", "score"), paths["scores"])
-        _write(predictions, paths["predictions"])
+        _write_together(
+            {"scores": predictions.select("event_id", "score"), "predictions": predictions}, paths
+        )
 
         budgets = detector.metadata.get("budgets") or BUDGETS
         counts = dict(predictions.group_by("tier").len().iter_rows())

@@ -9,6 +9,7 @@ import pytest
 from pandera.errors import SchemaErrors
 
 from data.datasets import DatasetConfig
+from data.drift import drift_report
 from data.features import build_features, features_path
 from data.split import load_side, write_split
 from inference.predict import ALLOW, Detector
@@ -82,7 +83,11 @@ def test_labels_are_never_used(config: DatasetConfig, data_dir: Path) -> None:
     np.testing.assert_allclose(after["score"], before["score"], rtol=0, atol=1e-12)
 
 
-def test_an_invalid_batch_is_not_scored(config: DatasetConfig, data_dir: Path) -> None:
+def test_an_invalid_batch_is_not_scored_and_no_earlier_scores_stay(
+    config: DatasetConfig, data_dir: Path
+) -> None:
+    pipeline.run(config, data_dir)  # an earlier, successful run
+    assert pipeline.output_paths(config, data_dir, "test")["scores"].is_file()
     path = features_path(config, data_dir)
     pl.read_parquet(path).with_columns(pl.lit(99, pl.Int8).alias("hour")).write_parquet(path)
     with pytest.raises(SchemaErrors):
@@ -96,10 +101,21 @@ def test_an_invalid_batch_is_not_scored(config: DatasetConfig, data_dir: Path) -
 def test_drift_is_reported_but_the_batch_is_still_scored(
     config: DatasetConfig, data_dir: Path
 ) -> None:
-    report = pipeline.run(config, data_dir, drift_limit=0.0)
+    report = pipeline.run(config, data_dir, drift_limit=1e-9)
     assert report["status"] == "passed with drift warning"
     assert report["drift"]["features_over_the_limit"]
+    assert report["drift"]["largest_score"] > 0, "test against development, not against itself"
     assert pipeline.output_paths(config, data_dir, "test")["scores"].is_file()
+
+    columns = Detector.load(data_dir, config.name).columns
+    expected = drift_report(
+        load_side(config, data_dir, "dev").select(columns).collect(),
+        load_side(config, data_dir, "test").select(columns).collect(),
+        columns,
+        limit=1e-9,
+    )
+    assert [row["column"] for row in report["drift"]["table"]] == columns, "the model's inputs"
+    assert report["drift"]["table"] == expected.to_dicts()
 
 
 def test_a_model_that_does_not_match_its_metadata_is_refused(
@@ -108,6 +124,26 @@ def test_a_model_that_does_not_match_its_metadata_is_refused(
     model = data_dir / "06_models" / f"{config.name}_model.joblib"
     model.write_bytes(model.read_bytes() + b"tampered")
     with pytest.raises(ValueError, match="does not match"):
+        pipeline.run(config, data_dir)
+
+
+def test_the_development_side_is_marked_in_sample(config: DatasetConfig, data_dir: Path) -> None:
+    report = pipeline.run(config, data_dir, side="dev")
+    assert report["in_sample"] is True
+    assert report["drift"]["largest_score"] == 0
+
+
+def test_an_empty_batch_is_refused(
+    config: DatasetConfig, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = load_side
+
+    def empty_test(cfg: DatasetConfig, folder: Path, side: str) -> pl.LazyFrame:
+        frame = real(cfg, folder, side)
+        return frame.head(0) if side == "test" else frame
+
+    monkeypatch.setattr(pipeline, "load_side", empty_test)
+    with pytest.raises(ValueError, match="no logins"):
         pipeline.run(config, data_dir)
 
 
