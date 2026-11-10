@@ -15,7 +15,8 @@ Blocking gates:
   must stay near that tier's budget.
 * **Segments**: recall within the 1% budget for each group of takeovers (the dominant campaign and
   the rest; first logins and returning accounts), each against all legitimate logins.
-* **Scoring time** per login.
+* **Scoring time**: per login when scoring many at once (the course's condition), and for a single
+  login on its own, which is what a sign-in waits for.
 
 Reported, not blocking:
 
@@ -154,13 +155,23 @@ def weakest_segment(segments: Mapping[str, Metrics]) -> Gate:
     )
 
 
-def scoring_time(seconds_per_login: float, *, max_seconds: float) -> Gate:
-    """Average time to score one login with the saved pipeline."""
+def batch_scoring_time(seconds_per_login: float, *, max_seconds: float) -> Gate:
+    """Average time per login when scoring many at once (the course's *model inference time*)."""
     return _gate(
-        "seconds_per_login",
+        "seconds_per_login_in_batch",
         float(f"{seconds_per_login:.3g}"),
         f"<= {max_seconds}",
         passed=seconds_per_login <= max_seconds,
+    )
+
+
+def single_login_latency(seconds: float, *, max_seconds: float) -> Gate:
+    """Median time to score one login on its own, as a login service or the demo does."""
+    return _gate(
+        "seconds_single_login",
+        float(f"{seconds:.3g}"),
+        f"<= {max_seconds}",
+        passed=seconds <= max_seconds,
     )
 
 

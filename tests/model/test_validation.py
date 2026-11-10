@@ -66,9 +66,11 @@ def test_weakest_segment_is_reported_not_blocking() -> None:
     assert "B" in gate["condition"]
 
 
-def test_scoring_time() -> None:
-    assert validation.scoring_time(2e-6, max_seconds=0.001)["passed"]
-    assert not validation.scoring_time(0.01, max_seconds=0.001)["passed"]
+def test_scoring_time_in_batch_and_for_one_login() -> None:
+    assert validation.batch_scoring_time(2e-6, max_seconds=0.001)["passed"]
+    assert not validation.batch_scoring_time(0.01, max_seconds=0.001)["passed"]
+    assert validation.single_login_latency(0.03, max_seconds=0.2)["passed"]
+    assert not validation.single_login_latency(0.5, max_seconds=0.2)["passed"]
 
 
 def test_overfitting_gap_and_calibration_are_reported() -> None:
@@ -86,7 +88,7 @@ def test_overfitting_gap_and_calibration_are_reported() -> None:
 def test_check_raises_only_for_failed_blocking_gates() -> None:
     reported = validation.weakest_segment({"all": _metrics(0.4, 0.9), "A": _metrics(0.1, 0.9)})
     validation.check([reported])  # failed, but only reported
-    blocking = validation.scoring_time(1.0, max_seconds=0.001)
+    blocking = validation.batch_scoring_time(1.0, max_seconds=0.001)
     with pytest.raises(validation.ModelValidationError, match="seconds_per_login") as caught:
         validation.check([reported, blocking])
     assert caught.value.failed == [blocking]

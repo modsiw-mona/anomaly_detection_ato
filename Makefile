@@ -30,7 +30,7 @@ feature_pipeline: ## Run the feature pipeline: data -> intermediate -> features 
 	@echo "Running the feature pipeline for $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m pipelines.feature_pipeline.run --dataset $(or $(DATASET),rba) $(if $(VALIDATE_ONLY),--validate-only)
 
-training_pipeline: ## Train, validate and save the selected model from the development side (DATASET=rba; REPEATS=3 for the 15-fold estimate)
+training_pipeline: ## Train, validate and save the selected model from the development side (DATASET=rba; REPEATS=1 for a quicker 5-fold run)
 	@echo "Running the training pipeline for $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m pipelines.training_pipeline.run --dataset $(or $(DATASET),rba) $(if $(REPEATS),--repeats $(REPEATS))
 

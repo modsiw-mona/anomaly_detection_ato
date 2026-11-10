@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from data.datasets import find_repo_root
 from data.features import FEATURE_GROUPS
+from inference.predict import BUDGETS as TIERS
 from model.selection import SUPERVISED
 
 Share = Annotated[float, Field(gt=0, lt=1)]
@@ -71,7 +72,8 @@ class Gates(_Strict):
     min_gain_over_baseline: float = Field(ge=0)
     alert_rate_ratio: tuple[float, float]
     min_segment_recall_at_1pct: float = Field(ge=0, le=1)
-    max_seconds_per_login: float = Field(gt=0)
+    max_seconds_per_login_in_batch: float = Field(gt=0)
+    max_seconds_single_login: float = Field(gt=0)
 
     @field_validator("alert_rate_ratio")
     @classmethod
@@ -100,10 +102,12 @@ class TrainingConfig(_Strict):
     _check_groups = field_validator("feature_groups")(_known_groups)
 
     @model_validator(mode="after")
-    def _strictest_first(self) -> TrainingConfig:
+    def _budgets(self) -> TrainingConfig:
         shares = list(self.budgets.values())
         if not shares or shares != sorted(shares):
             raise ValueError("budgets must be listed strictest (smallest) first")
+        if set(self.budgets) != set(TIERS):
+            raise ValueError(f"budgets must name the response tiers {list(TIERS)}")
         return self
 
 

@@ -74,12 +74,14 @@ pipeline reads only the development side:
 | Gain over the logistic baseline | PR-AUC at least 10% higher, on the same folds | yes |
 | Alert rate of the saved model | within 0.5 to 2 times each budget, on development logins | yes |
 | Each group of takeovers (the dominant campaign, the rest, first logins, returning accounts) | recall within the 1% budget >= 0.5 | yes |
-| Scoring time | at most 1 ms per login | yes |
+| Scoring time | at most 1 ms per login when scoring many at once (the course's condition); at most 0.2 s for a single login on its own, what a sign-in waits for | yes |
 | Weakest group | PR-AUC at least 80% of the overall one (the course's condition) | reported: takeovers outside the dominant campaign are much harder |
 | Overfitting gap, calibration (Brier score) | | reported |
 
 It saves the model, its metadata and the out-of-fold scores where the notebooks saved them, so notebooks 07 and
-08 and the demo read them unchanged. Every run writes a record to `data/08_reporting/training_runs/`: the
+08 and the demo read them unchanged. The three files are written first and renamed only then, the metadata last,
+and the inference module refuses a model file whose SHA-256 differs from its metadata, so a model never runs with
+another one's thresholds. `REPEATS=1` gives a quicker 5-fold run; notebooks 07 and 08 need the default 15 folds. Every run writes a record to `data/08_reporting/training_runs/`: the
 configuration, metrics, gates, the SHA-256 of the data and of the model, the git commit, library versions, and
 whether the model is identical to the previous one.
 

@@ -61,6 +61,11 @@ def test_invalid_configuration_is_rejected(change: dict[str, Any], message: str)
         TrainingConfig.model_validate({**_raw(), **change})
 
 
+def test_budgets_must_name_the_response_tiers() -> None:
+    with pytest.raises(ValidationError, match="response tiers"):
+        TrainingConfig.model_validate({**_raw(), "budgets": {"block": 0.001, "step-up": 0.01}})
+
+
 def test_alert_rate_ratio_must_bracket_one() -> None:
     raw = _raw()
     raw["gates"] = {**raw["gates"], "alert_rate_ratio": [1.5, 2.0]}

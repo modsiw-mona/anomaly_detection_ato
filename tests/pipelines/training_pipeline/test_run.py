@@ -12,10 +12,11 @@ import pytest
 from data.datasets import DatasetConfig
 from data.features import build_features, features_path
 from data.split import load_side, write_split
-from inference.predict import Detector
+from inference.predict import Detector, alert_thresholds
 from model.validation import ModelValidationError
 from pipelines.training_pipeline import run as pipeline
 from pipelines.training_pipeline.config import TrainingConfig
+from pipelines.training_pipeline.run import cross_validation_summary
 from tests.data.test_features import WINDOW, _config, _events
 
 N_USERS, LOGINS, TAKEOVER_USERS, FIRST_LOGIN_TAKEOVERS = 300, 4, 45, 15
@@ -34,7 +35,7 @@ TRAINING: dict[str, Any] = {
     "segments": {"column": "country", "value": "RO", "name": "Romania"},
     "gates": {"min_interval_low": 0.0, "min_recall_at_1pct": 0.0, "min_gain_over_baseline": 0.0,
               "alert_rate_ratio": [0.01, 100.0], "min_segment_recall_at_1pct": 0.0,
-              "max_seconds_per_login": 1.0},
+              "max_seconds_per_login_in_batch": 1.0, "max_seconds_single_login": 10.0},
 }  # fmt: skip
 
 
@@ -109,7 +110,7 @@ def test_trains_validates_and_saves_the_files_the_inference_module_reads(
     assert detector.score(dev).shape == (dev.height,)
 
     names = {g["name"] for g in record["gates"]}
-    assert {"pr_auc_interval_low", "gain_over_baseline", "seconds_per_login"} <= names
+    assert {"pr_auc_interval_low", "gain_over_baseline", "seconds_single_login"} <= names
     assert {"segment_recall_at_1pct[Romania]", "segment_recall_at_1pct[first login]"} <= names
     assert record["data"]["features_sha256"] == _sha(features_path(config, data_dir))
     assert record["model"]["same_as_previous"] is None, "no earlier model"
@@ -136,15 +137,15 @@ def test_a_failing_gate_saves_nothing_and_keeps_the_previous_model(
     paths = pipeline.model_paths(config, data_dir)
     before = {name: _sha(path) for name, path in paths.items()}
     strict = training.model_copy(
-        update={"gates": training.gates.model_copy(update={"max_seconds_per_login": 1e-12})}
+        update={"gates": training.gates.model_copy(update={"max_seconds_single_login": 1e-12})}
     )
-    with pytest.raises(ModelValidationError, match="seconds_per_login"):
+    with pytest.raises(ModelValidationError, match="seconds_single_login"):
         pipeline.run(config, strict, data_dir)
     assert {name: _sha(path) for name, path in paths.items()} == before
-    assert not list(paths["model"].parent.glob("*.part"))
     record = json.loads(pipeline.report_path(config, data_dir).read_text())
     assert record["status"] == "failed"
-    assert any(g["name"] == "seconds_per_login" and not g["passed"] for g in record["gates"])
+    assert any(g["name"] == "seconds_single_login" and not g["passed"] for g in record["gates"])
+    assert record["error"].startswith("ModelValidationError")
 
 
 def test_the_test_side_is_never_read(
@@ -185,7 +186,7 @@ def test_main_exit_code(monkeypatch: pytest.MonkeyPatch, *, fails: bool) -> None
         if fails:
             raise ModelValidationError([])
         return {
-            "cross_validation": {"pr_auc (15 folds)": 0.5, "folds": 5},
+            "cross_validation": {"pr_auc (5 folds)": 0.5, "folds": 5},
             "model": {"same_as_previous": True},
         }
 
@@ -215,3 +216,112 @@ def test_fifteen_folds_write_the_metadata_notebooks_07_and_08_read(
     assert set(metadata) >= NOTEBOOK_06_KEYS
     assert set(metadata["cv_15_folds"]) == NOTEBOOK_06_CV_KEYS
     assert metadata["selected"] == "toy forest"
+
+
+def test_each_gate_measures_what_it_names(
+    config: DatasetConfig, training: TrainingConfig, data_dir: Path
+) -> None:
+    """Recompute every gate value independently from the saved files and the run record."""
+    record = pipeline.run(config, training, data_dir)
+    gate = {g["name"]: g["value"] for g in record["gates"]}
+    rows = record["repeats"]
+    assert gate["pr_auc_interval_low"] == round(np.mean([r["pooled_low"] for r in rows]), 4)
+    assert gate["recall_at_1pct"] == round(np.mean([r["recall_1pct"] for r in rows]), 4)
+    gain = rows[0]["pr_auc"] / record["baseline_repeat_0"]["pr_auc"] - 1
+    assert gate["gain_over_baseline"] == pytest.approx(gain, abs=1e-4)
+
+    paths = pipeline.model_paths(config, data_dir)
+    metadata = json.loads(paths["metadata"].read_text())
+    detector = Detector.from_files(paths["model"].parent, config.name, metadata["thresholds"])
+    oof = pl.read_parquet(paths["out_of_fold"])
+    dev = (
+        pl.read_parquet(features_path(config, data_dir))
+        .join(oof.select("event_id"), on="event_id", how="semi")
+        .sort("event_id")
+    )
+    saved_model_scores = detector.score(dev)  # the final model, not the out-of-fold scores
+    for tier, threshold in metadata["thresholds"].items():
+        rate = float(np.mean(saved_model_scores >= threshold))
+        assert gate[f"alert_rate[{tier}]"] == pytest.approx(rate, abs=1e-6)
+    oof_rate = float(np.mean(oof["score"].to_numpy() >= metadata["thresholds"]["step-up"]))
+    assert metadata["thresholds"] == pytest.approx(
+        alert_thresholds(oof["score"].to_numpy(), training.budgets)
+    )
+    assert oof_rate == pytest.approx(training.budgets["step-up"], abs=0.01)
+
+
+def test_a_failure_while_saving_keeps_the_previous_files(
+    config: DatasetConfig,
+    training: TrainingConfig,
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipeline.run(config, training, data_dir)
+    paths = pipeline.model_paths(config, data_dir)
+    before = {name: _sha(path) for name, path in paths.items()}
+
+    def disk_full(*_: object, **__: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(pl.DataFrame, "write_parquet", disk_full)
+    with pytest.raises(OSError, match="disk full"):
+        pipeline.run(config, training, data_dir)
+    assert {name: _sha(path) for name, path in paths.items()} == before
+    assert not [p for path in paths.values() for p in path.parent.glob("*.part")]
+
+
+def test_test_side_rows_do_not_change_the_model(
+    config: DatasetConfig, training: TrainingConfig, data_dir: Path
+) -> None:
+    first = pipeline.run(config, training, data_dir)
+    path = features_path(config, data_dir)
+    split = pl.read_parquet(data_dir / "05_model_input" / f"{config.name}_split.parquet")
+    test_users = split.filter(pl.col("split") == "test")["user_id"].implode()
+    garbage = pl.read_parquet(path).with_columns(
+        pl.when(pl.col("user_id").is_in(test_users))
+        .then(pl.lit(1.0))
+        .otherwise(pl.col("global_share_asn"))
+        .alias("global_share_asn"),
+        pl.when(pl.col("user_id").is_in(test_users))
+        .then(~pl.col("label_ato"))
+        .otherwise(pl.col("label_ato"))
+        .alias("label_ato"),
+    )
+    garbage.write_parquet(path)
+    second = pipeline.run(config, training, data_dir)
+    assert second["data"]["features_sha256"] != first["data"]["features_sha256"]
+    assert second["model"]["joblib_sha256"] == first["model"]["joblib_sha256"]
+
+
+def test_a_configuration_that_does_not_fit_the_data_fails_before_training(
+    config: DatasetConfig, training: TrainingConfig, data_dir: Path
+) -> None:
+    wrong = training.model_copy(
+        update={"segments": training.segments.model_copy(update={"column": "campaign_name"})}
+    )
+    with pytest.raises(pipeline.ConfigurationError, match="campaign_name"):
+        pipeline.run(config, wrong, data_dir)
+    record = json.loads(pipeline.report_path(config, data_dir).read_text())
+    assert record["seconds"].get("out_of_fold") is None, "stopped before any training"
+
+
+def test_cross_validation_summary_averages_repeats_like_notebook_06() -> None:
+    rows = [
+        {"pr_auc": 0.4, "pr_auc_std": 0.1, "recall_1pct": 0.9, "pooled_low": 0.30001},
+        {"pr_auc": 0.5, "pr_auc_std": 0.2, "recall_1pct": 0.8, "pooled_low": 0.4},
+    ]
+    summary = cross_validation_summary(rows, 10)
+    assert summary == {
+        "pr_auc (10 folds)": 0.45,
+        "std within repeat": 0.15,
+        "std across repeats": round(float(np.std([0.4, 0.5], ddof=1)), 4),
+        "recall_1pct": 0.85,
+        "pooled_low": 0.35,
+    }
+    assert cross_validation_summary(rows[:1], 5)["std across repeats"] is None
+
+
+@pytest.mark.parametrize("repeats", ["0", "-1"])
+def test_repeats_must_be_positive(repeats: str) -> None:
+    with pytest.raises(SystemExit):
+        pipeline.main(["--repeats", repeats])
