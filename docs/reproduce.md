@@ -48,13 +48,20 @@ and leaves the earlier outputs in place; the log counts the failing rows of each
 `data/08_reporting/rba_feature_pipeline.json`. The steps can also run one at a time,
 without the checks: `make data`, `make intermediate`, `make features`, `make split`.
 
-## Train, evaluate and run the demo
+## Train, score and run the demo
 
 ```bash
 make training_pipeline      # about 6 minutes: the selected model, validated, with its thresholds
+make inference_pipeline     # about 30 seconds: scores and response tiers of the test side
+make demo
+```
+
+`make pipelines` runs the feature, training and inference pipelines in order. The notebooks are the record of the
+proof of concept; the final evaluation and the friction analysis read what the pipelines save:
+
+```bash
 make notebooks_run NB=notebooks/6-interpretation/07-sap-model_interpretation-2026_11_04.ipynb
 make notebooks_run NB=notebooks/6-interpretation/08-sap-user_friction-2026_11_08.ipynb
-make demo
 ```
 
 The **training pipeline** trains only the selected configuration, written in `conf/training/rba.yaml` (model,
@@ -85,9 +92,21 @@ another one's thresholds. `REPEATS=1` gives a quicker 5-fold run; notebooks 07 a
 configuration, metrics, gates, the SHA-256 of the data and of the model, the git commit, library versions, and
 whether the model is identical to the previous one.
 
-On the RBA data the pipeline rebuilds the notebook's model **byte for byte** (same SHA-256), the 15-fold PR-AUC
+The **inference pipeline** scores a batch of logins with the saved model, the way a security team would score
+the previous day's logins (the demo scores one login at a time with the same module). It loads the model only if
+its SHA-256 matches the metadata, reads the batch **without its label column**, validates it with the feature
+table's schema, compares the model's inputs with the development side (drift is reported, not blocking: a
+service keeps answering), and writes every login's score and response tier to `data/07_model_output/` with a
+report in `data/08_reporting/rba_inference_pipeline.json`. Measuring the model on the test side is the final
+evaluation's job, done once. A run first removes the outputs of the previous one, so a failed run never leaves
+scores of another model behind. `SIDE=dev` scores the development side, in-sample, and the report says so. On the
+test side it flags 0.094% of logins for review or block and 0.95% for a second factor or stricter, against
+budgets of 0.1% and 1%.
+
+On the RBA data the training pipeline rebuilds the notebook's model **byte for byte** (same SHA-256), the 15-fold PR-AUC
 (0.4475) and the thresholds. The forest averages its trees in parallel, so a few scores may differ in the last
-bit (about 1e-16) from run to run; no threshold or response tier changes.
+bit (about 1e-16) from run to run; no threshold or response tier changes. The same holds for the inference
+pipeline: its test-side scores match notebook 07's to 1e-16, with no tier changed.
 
 ## Checks
 
