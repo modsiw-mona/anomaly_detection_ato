@@ -37,3 +37,8 @@ If there are things that are requested in the task and were not implemented, lis
 Steps to test or reproduce the PR here
 
 - `uv run pytest --cov`
+
+## Checklist
+
+- [ ] `make check` and `make test` pass
+- [ ] `CHANGELOG.md`: a line under `[Unreleased]` for any change a reader of the project would notice
