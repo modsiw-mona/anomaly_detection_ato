@@ -1,4 +1,4 @@
-.PHONY: install_env data intermediate features split feature_pipeline training_pipeline demo notebooks_run test test_verbose test_coverage docs docs_test clean_env switch_main clean_branchs check lint help pre-commit_update demo_bundle
+.PHONY: install_env data intermediate features split feature_pipeline training_pipeline inference_pipeline pipelines demo notebooks_run test test_verbose test_coverage docs docs_test clean_env switch_main clean_branchs check lint help pre-commit_update demo_bundle
 
 ####----Basic configurations----####
 
@@ -33,6 +33,12 @@ feature_pipeline: ## Run the feature pipeline: data -> intermediate -> features 
 training_pipeline: ## Train, validate and save the selected model from the development side (DATASET=rba; REPEATS=1 for a quicker 5-fold run)
 	@echo "Running the training pipeline for $(or $(DATASET),rba)..."
 	PYTHONPATH=src uv run python -m pipelines.training_pipeline.run --dataset $(or $(DATASET),rba) $(if $(REPEATS),--repeats $(REPEATS))
+
+inference_pipeline: ## Score a side of the split with the saved model: scores, response tiers, drift report (DATASET=rba; SIDE=test)
+	@echo "Running the inference pipeline for $(or $(DATASET),rba)..."
+	PYTHONPATH=src uv run python -m pipelines.inference_pipeline.run --dataset $(or $(DATASET),rba) --side $(or $(SIDE),test)
+
+pipelines: feature_pipeline training_pipeline inference_pipeline ## Run the three FTI pipelines in order (feature -> training -> inference)
 
 demo: ## Run the Streamlit risk demo (needs the model from notebooks 06 and 07)
 	PYTHONPATH=src ATO_DATASET=$(or $(DATASET),rba) ATO_DEMO_OFFLINE=1 uv run streamlit run notebooks/7-deploy/app.py \

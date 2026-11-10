@@ -110,6 +110,13 @@ class Detector:
                 return name
         return ALLOW
 
+    def tiers(self, scores: FloatArray) -> npt.NDArray[np.str_]:
+        """Response tier of every score at once (the same rule as :meth:`tier`)."""
+        result = np.full(scores.shape, ALLOW, dtype=object)
+        for name, threshold in reversed(self.thresholds.items()):  # strictest assigned last
+            result[scores >= threshold] = name
+        return result.astype(str)
+
     def _shap(self, frame: pl.DataFrame) -> tuple[list[str], FloatArray]:
         import shap  # noqa: PLC0415 — heavy import, only needed for explanations
 

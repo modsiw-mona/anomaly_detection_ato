@@ -178,3 +178,13 @@ def test_load_uses_the_thresholds_saved_with_the_model(saved: Path, tmp_path: Pa
     assert Detector.load(saved, "toy").thresholds == alert_thresholds(
         pl.read_parquet(saved / "07_model_output" / "toy_dev_oof.parquet")["score"].to_numpy()
     ), "without saved thresholds they are computed from the out-of-fold scores"
+
+
+def test_tiers_of_many_scores_follow_the_rule_for_one(saved: Path) -> None:
+    detector = Detector.load(saved, "toy")
+    block, step_up = detector.thresholds["review / block"], detector.thresholds["step-up"]
+    scores = np.array([0.0, step_up - 1e-9, step_up, block - 1e-9, block, 1.0])
+    assert list(detector.tiers(scores)) == [detector.tier(s) for s in scores]
+    assert list(detector.tiers(scores)) == [
+        ALLOW, ALLOW, "step-up", "step-up", "review / block", "review / block",
+    ]  # fmt: skip
