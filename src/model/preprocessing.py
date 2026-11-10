@@ -75,7 +75,18 @@ def _cyclic(period: int) -> FunctionTransformer:
 
 
 def to_model_frame(features: pl.DataFrame, columns: Sequence[str]) -> pl.DataFrame:
-    """Select ``columns`` with dtypes scikit-learn handles: numbers as Float64, categories as text."""
+    """Select ``columns`` with dtypes scikit-learn handles: numbers as Float64, categories as text.
+
+    Args:
+        features: The feature table.
+        columns: Feature columns to keep, in this order. Categorical nulls become ``missing``.
+
+    Returns:
+        ``features`` restricted to ``columns``, numbers and booleans cast to Float64.
+
+    Raises:
+        TypeError: If a non-categorical column is neither numeric nor boolean.
+    """
     exprs = []
     for column in columns:
         dtype = features.schema[column]
@@ -89,7 +100,20 @@ def to_model_frame(features: pl.DataFrame, columns: Sequence[str]) -> pl.DataFra
 
 
 def build_preprocessor(columns: Sequence[str]) -> ColumnTransformer:
-    """Unfitted ColumnTransformer for the given feature columns (any subset of the feature groups)."""
+    """Unfitted ColumnTransformer for the given feature columns (any subset of the feature groups).
+
+    Args:
+        columns: Feature columns to transform; each must belong to one family (see the module
+            docstring). Columns not listed are dropped.
+
+    Returns:
+        An unfitted ``ColumnTransformer`` with one transformer per numeric or boolean family
+        present, one per categorical or cyclic column, plus a *never seen* indicator when
+        reputation rates are present.
+
+    Raises:
+        ValueError: If a column belongs to no preprocessing family.
+    """
     log_counts = FunctionTransformer(np.log1p, feature_names_out="one-to-one")
     families: dict[str, list[str]] = {
         "counts": [], "shares": [], "rates": [], "booleans": [], "raw": [],

@@ -57,6 +57,7 @@ def _score(app: AppTest) -> str:
 def test_demo_scores_a_login_and_reacts_to_its_inputs(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Log in shows the score; a changed input moves it, and Back restores the real score."""
     app = _open(data_dir, monkeypatch)
     intro = " ".join(m.value for m in app.markdown)
     assert "How to use it" in intro, "the page explains itself"
@@ -93,6 +94,7 @@ def test_a_number_input_is_set_directly(data_dir: Path, monkeypatch: pytest.Monk
 def test_a_never_seen_network_has_no_accounts(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A network share of zero locks its account count at 0; a nonzero share restores the count."""
     app = _open(data_dir, monkeypatch)
     real_accounts = app.select_slider(key=ACCOUNTS).value
     app.select_slider(key=NETWORK_SHARE).set_value(0).run()
@@ -110,6 +112,7 @@ def test_a_never_seen_network_has_no_accounts(
 def test_the_table_keeps_the_order_of_the_controls(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The score table lists inputs in the order of the controls and keeps it as values change."""
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
     order = list(_table(app)["input"])
@@ -124,12 +127,14 @@ def test_the_table_keeps_the_order_of_the_controls(
 
 
 def test_contributions_add_up_to_the_score(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The contributions in the score table add up to the displayed takeover score."""
     app = _open(data_dir, monkeypatch)
     parts = _table(app)["contribution"].iloc[:-1].astype(float).sum()
     assert parts == pytest.approx(float(_score(app)), abs=0.01)
 
 
 def test_implied_signal_follows_its_cause(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Switching on a new network turns on and locks the new-IP switch."""
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
     app.toggle(key="in-new_asn").set_value(True).run()
@@ -142,6 +147,7 @@ def test_implied_signal_follows_its_cause(data_dir: Path, monkeypatch: pytest.Mo
 def test_undoing_a_cause_restores_the_implied_signal(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Undoing a new-network switch restores the new-IP switch and leaves the login unchanged."""
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
     before = app.toggle(key="in-new_ip").value
@@ -155,6 +161,7 @@ def test_undoing_a_cause_restores_the_implied_signal(
 
 
 def test_travel_follows_the_previous_login(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An old previous login turns off and locks the travel switch; a recent one restores it."""
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
     app.select_slider(key="in-gap").set_value("under an hour").run()
@@ -169,6 +176,7 @@ def test_travel_follows_the_previous_login(data_dir: Path, monkeypatch: pytest.M
 
 
 def test_device_type_reaches_the_model(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A changed device type appears in the score table next to the real login's device type."""
     app = _open(data_dir, monkeypatch)
     device = app.radio(key="in-device_type")
     real = device.value
@@ -183,6 +191,7 @@ def test_device_type_reaches_the_model(data_dir: Path, monkeypatch: pytest.Monke
 def test_first_login_greys_out_history_signals(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """On a first login, history switches are disabled and the time-gap slider is not shown."""
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "first")
     assert app.toggle(key="in-new_country").disabled, "nothing to compare with yet"
@@ -190,6 +199,7 @@ def test_first_login_greys_out_history_signals(
 
 
 def test_technical_terms_are_explained(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Number inputs and technical switches have tooltips with a definition and the usual values."""
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
     assert all(s.help for s in app.select_slider if s.key != "in-gap"), "every number input"
@@ -204,6 +214,7 @@ def test_technical_terms_are_explained(data_dir: Path, monkeypatch: pytest.Monke
 
 
 def test_the_score_is_put_in_context(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After Log in, the page compares the score with the dataset and with the thresholds."""
     app = _log_in(_open(data_dir, monkeypatch))
     assert any(m.value.startswith("In the dataset,") for m in app.markdown)
     assert any("threshold" in m.value for m in app.markdown if "Response:" in m.value), (
@@ -212,6 +223,7 @@ def test_the_score_is_put_in_context(data_dir: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_demo_explains_missing_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without data and without network access, the demo shows an error instead of crashing."""
     monkeypatch.setenv("ATO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("ATO_DEMO_OFFLINE", "1")  # no download of the published bundle
     st.cache_resource.clear()  # the model loaded by the other test is cached per process
@@ -272,6 +284,7 @@ def _change(app: AppTest, control: str) -> None:
 def test_a_changed_attempt_asks_to_log_in_again(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch, control: str
 ) -> None:
+    """Changing any control hides the old response until the viewer logs in again."""
     app = _open(data_dir, monkeypatch)
     assert _choose(app, "returning")
     _log_in(app)
@@ -286,6 +299,7 @@ def test_a_changed_attempt_asks_to_log_in_again(
 def test_the_2fa_screen_takes_a_code_as_a_simulation(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The simulated 2FA screen admits the owner who enters a code and blocks an attacker."""
     app = _open(data_dir, monkeypatch)
     for key in [b.key for b in app.button if b.key and b.key.startswith("kind-")]:
         app.button(key=key).click().run()
@@ -345,6 +359,7 @@ def _part_is_shown(app: AppTest, part: str) -> bool:
 
 
 def test_every_tour_target_is_a_container_of_the_page() -> None:
+    """Each of the five guided-tour targets is the key of a container in the demo page."""
     source = APP.read_text()
     targets = set(re.findall(r'"(tour-(?:kinds|attempt|card|response|system))"', source))
     assert len(targets) == 5, targets  # noqa: PLR2004
@@ -354,6 +369,7 @@ def test_every_tour_target_is_a_container_of_the_page() -> None:
 def test_the_guided_tour_highlights_each_part(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The guided tour highlights each part of the page in order and closes with Done or Skip."""
     app = _open(data_dir, monkeypatch)
     assert not [b for b in app.button if b.key == "tour-next"], "no tour until asked"
     app.button(key="tour-start").click().run()
@@ -383,6 +399,7 @@ def test_the_guided_tour_highlights_each_part(
 def test_the_selected_login_is_shown_at_a_glance(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The page summarises the selected login and says whether it was a takeover or the user."""
     app = _open(data_dir, monkeypatch)
     page = " ".join(m.value for m in app.markdown)
     assert "The selected login" in page

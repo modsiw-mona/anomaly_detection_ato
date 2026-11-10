@@ -31,7 +31,17 @@ SEED = 20261102
 
 
 def rule_scores(frame: pl.DataFrame) -> dict[str, FloatArray]:
-    """Scores of the dummy and the single-signal rules for every row of ``frame``."""
+    """Scores of the dummy and the single-signal rules for every row of ``frame``.
+
+    Args:
+        frame: Feature rows with the ``new_country`` and ``attack_ip`` columns. A null
+            ``new_country`` (first login) counts as not new.
+
+    Returns:
+        One score array per baseline name (``dummy (constant)``, ``rule: new country``,
+        ``rule: attack IP``, ``rule: new country + attack IP``), each with one value per row of
+        ``frame``; higher means more suspicious.
+    """
     new_country = frame["new_country"].fill_null(value=False).cast(pl.Float64).to_numpy()
     attack_ip = frame["attack_ip"].cast(pl.Float64).to_numpy()
     return {
@@ -50,6 +60,14 @@ def training_sample(
     The seed picks row *positions*, so ``train`` is first put in a canonical order (by event id):
     the same seed then picks the same logins whatever order the rows arrived in (polars joins and
     group-bys do not guarantee row order).
+
+    Args:
+        train: Training feature rows with the ``event_id`` and ``label_ato`` columns.
+        negative_share: Fraction (0 to 1) of the legitimate logins to keep.
+        seed: Seed of the random sample of legitimate logins.
+
+    Returns:
+        The takeover rows followed by the sampled legitimate rows, same columns as ``train``.
     """
     train = train.sort(EVENT_ID)
     positives = train.filter(pl.col(LABEL))
@@ -58,7 +76,15 @@ def training_sample(
 
 
 def logistic_baseline(columns: Sequence[str]) -> Pipeline:
-    """Unfitted preprocessing + logistic regression pipeline."""
+    """Unfitted preprocessing + logistic regression pipeline.
+
+    Args:
+        columns: Feature columns the preprocessor handles (see ``model.preprocessing``).
+
+    Returns:
+        A ``preprocess`` then ``model`` pipeline; the logistic regression uses balanced class
+        weights.
+    """
     return Pipeline(
         [
             ("preprocess", build_preprocessor(columns)),
@@ -74,7 +100,17 @@ def fit_logistic(
     negative_share: float = NEGATIVE_SHARE,
     seed: int = SEED,
 ) -> Pipeline:
-    """Fit the logistic baseline on a sample of ``train`` (all takeovers kept)."""
+    """Fit the logistic baseline on a sample of ``train`` (all takeovers kept).
+
+    Args:
+        train: Training feature rows, with the ``label_ato`` label.
+        columns: Feature columns to use; None means the default ``feature_columns()``.
+        negative_share: Fraction (0 to 1) of the legitimate logins kept in the sample.
+        seed: Seed of the sample of legitimate logins.
+
+    Returns:
+        The fitted pipeline (see :func:`logistic_baseline`).
+    """
     columns = list(columns or feature_columns())
     sample = training_sample(train, negative_share=negative_share, seed=seed)
     pipeline = logistic_baseline(columns)
@@ -85,7 +121,18 @@ def fit_logistic(
 def predict_scores(
     pipeline: Pipeline, frame: pl.DataFrame, columns: Sequence[str] | None = None
 ) -> FloatArray:
-    """Takeover scores (log-odds) for every row of ``frame``."""
+    """Takeover scores (log-odds) for every row of ``frame``.
+
+    Args:
+        pipeline: A fitted pipeline with a ``decision_function``, such as the one from
+            :func:`fit_logistic`.
+        frame: Feature rows to score.
+        columns: Feature columns the pipeline was fitted on; None means the default
+            ``feature_columns()``.
+
+    Returns:
+        One log-odds score per row of ``frame``, in the same order; higher means more suspicious.
+    """
     columns = list(columns or feature_columns())
     scores: FloatArray = pipeline.decision_function(to_model_frame(frame, columns))
     return scores

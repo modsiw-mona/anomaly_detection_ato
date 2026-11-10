@@ -68,16 +68,19 @@ def _toy_events(seed: int = 0) -> list[dict[str, Any]]:
 
 @pytest.fixture
 def config() -> DatasetConfig:
+    """The toy dataset configuration, with the label window set."""
     return _config(**WINDOW)
 
 
 @pytest.fixture
 def training() -> TrainingConfig:
+    """The toy training configuration, validated."""
     return TrainingConfig.model_validate(TRAINING)
 
 
 @pytest.fixture
 def data_dir(tmp_path: Path, config: DatasetConfig) -> Path:
+    """A temporary data directory with the toy feature table and its split."""
     path = features_path(config, tmp_path)
     path.parent.mkdir(parents=True)
     build_features(_events(_toy_events()), config).collect().write_parquet(path)
@@ -92,6 +95,7 @@ def _sha(path: Path) -> str:
 def test_trains_validates_and_saves_the_files_the_inference_module_reads(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
+    """A run saves the model, metadata and out-of-fold scores the detector reads, and a record."""
     record = pipeline.run(config, training, data_dir)
     assert record["status"] == "passed"
     paths = pipeline.model_paths(config, data_dir)
@@ -122,6 +126,7 @@ def test_trains_validates_and_saves_the_files_the_inference_module_reads(
 def test_the_same_configuration_gives_the_same_model(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
+    """Training twice with the same configuration gives a byte-identical model."""
     first = pipeline.run(config, training, data_dir)
     second = pipeline.run(config, training, data_dir)
     assert second["model"]["same_as_previous"] is True
@@ -133,6 +138,7 @@ def test_the_same_configuration_gives_the_same_model(
 def test_a_failing_gate_saves_nothing_and_keeps_the_previous_model(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
+    """A failed validation gate saves nothing, keeps the previous model and reports the gate."""
     pipeline.run(config, training, data_dir)
     paths = pipeline.model_paths(config, data_dir)
     before = {name: _sha(path) for name, path in paths.items()}
@@ -154,6 +160,7 @@ def test_the_test_side_is_never_read(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Training reads only the development side of the split."""
     real = load_side
     sides: list[str] = []
 
@@ -169,6 +176,7 @@ def test_the_test_side_is_never_read(
 def test_more_repeats_refine_the_estimate_but_not_the_thresholds(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
+    """More repeats add folds but change neither the thresholds nor the model."""
     one = pipeline.run(config, training, data_dir)
     three = pipeline.run(
         config,
@@ -182,6 +190,8 @@ def test_more_repeats_refine_the_estimate_but_not_the_thresholds(
 
 @pytest.mark.parametrize("fails", [False, True])
 def test_main_exit_code(monkeypatch: pytest.MonkeyPatch, *, fails: bool) -> None:
+    """``main`` exits with 0 on success and 1 when a validation gate fails."""
+
     def fake_run(*_: object) -> dict[str, Any]:
         if fails:
             raise ModelValidationError([])
@@ -208,6 +218,7 @@ NOTEBOOK_06_CV_KEYS = {
 def test_fifteen_folds_write_the_metadata_notebooks_07_and_08_read(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
+    """Five folds by three repeats write the metadata keys that notebooks 07 and 08 read."""
     fifteen = training.model_copy(
         update={"folds": training.folds.model_copy(update={"n_folds": 5, "repeats": 3})}
     )
@@ -221,7 +232,7 @@ def test_fifteen_folds_write_the_metadata_notebooks_07_and_08_read(
 def test_each_gate_measures_what_it_names(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
-    """Recompute every gate value independently from the saved files and the run record."""
+    """The interval, recall, gain and alert-rate gates match values recomputed from the files."""
     record = pipeline.run(config, training, data_dir)
     gate = {g["name"]: g["value"] for g in record["gates"]}
     rows = record["repeats"]
@@ -256,6 +267,7 @@ def test_a_failure_while_saving_keeps_the_previous_files(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A write error while saving keeps the previous model files and leaves no partial file."""
     pipeline.run(config, training, data_dir)
     paths = pipeline.model_paths(config, data_dir)
     before = {name: _sha(path) for name, path in paths.items()}
@@ -273,6 +285,7 @@ def test_a_failure_while_saving_keeps_the_previous_files(
 def test_test_side_rows_do_not_change_the_model(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
+    """Changing test-side rows, labels included, leaves the trained model byte-identical."""
     first = pipeline.run(config, training, data_dir)
     path = features_path(config, data_dir)
     split = pl.read_parquet(data_dir / "05_model_input" / f"{config.name}_split.parquet")
@@ -296,6 +309,7 @@ def test_test_side_rows_do_not_change_the_model(
 def test_a_configuration_that_does_not_fit_the_data_fails_before_training(
     config: DatasetConfig, training: TrainingConfig, data_dir: Path
 ) -> None:
+    """A segment column missing from the data stops the run before any training."""
     wrong = training.model_copy(
         update={"segments": training.segments.model_copy(update={"column": "campaign_name"})}
     )
@@ -306,6 +320,7 @@ def test_a_configuration_that_does_not_fit_the_data_fails_before_training(
 
 
 def test_cross_validation_summary_averages_repeats_like_notebook_06() -> None:
+    """``cross_validation_summary`` averages repeats; one repeat has no spread across repeats."""
     rows = [
         {"pr_auc": 0.4, "pr_auc_std": 0.1, "recall_1pct": 0.9, "pooled_low": 0.30001},
         {"pr_auc": 0.5, "pr_auc_std": 0.2, "recall_1pct": 0.8, "pooled_low": 0.4},
@@ -323,5 +338,6 @@ def test_cross_validation_summary_averages_repeats_like_notebook_06() -> None:
 
 @pytest.mark.parametrize("repeats", ["0", "-1"])
 def test_repeats_must_be_positive(repeats: str) -> None:
+    """``main`` rejects a repeat count below 1."""
     with pytest.raises(SystemExit):
         pipeline.main(["--repeats", repeats])

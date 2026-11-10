@@ -33,6 +33,17 @@ def alert_thresholds(
 
     Tiers must be listed strictest first (smallest budget first): :meth:`Detector.tier` returns the
     first tier whose threshold a score reaches.
+
+    Args:
+        dev_scores: Out-of-fold scores of the development logins.
+        budgets: Share of development logins each tier takes, strictest (smallest) first.
+
+    Returns:
+        The threshold of each tier, in the order of ``budgets``: the ``1 - budget`` quantile of
+        ``dev_scores``.
+
+    Raises:
+        ValueError: If the budgets are not listed smallest first.
     """
     shares = list(budgets.values())
     if shares != sorted(shares):
@@ -59,6 +70,16 @@ class Detector:
         The thresholds are the ones saved with the model by the training pipeline, which checked
         them; for a model saved without them (notebook 06), they are computed from the same
         out-of-fold development scores.
+
+        Args:
+            data_dir: Root of the data folders (``06_models``, ``07_model_output``).
+            dataset: Dataset name, as in the file names.
+
+        Returns:
+            The detector, with the sorted out-of-fold development scores as ``reference_scores``.
+
+        Raises:
+            ValueError: If the model file does not match the SHA-256 in its metadata.
         """
         dev_scores = pl.read_parquet(data_dir / "07_model_output" / f"{dataset}_dev_oof.parquet")
         reference = np.sort(dev_scores["score"].to_numpy())
@@ -76,6 +97,14 @@ class Detector:
         When the metadata records the file's SHA-256, it is checked here too, so a model never
         runs with the metadata (columns, thresholds) of another one.
 
+        Args:
+            folder: Folder holding ``<dataset>_model.joblib`` and ``<dataset>_model.json``.
+            dataset: Dataset name, as in the file names.
+            thresholds: Score threshold of each tier, strictest first.
+
+        Returns:
+            The detector, without reference scores.
+
         Raises:
             ValueError: If the model file does not match the SHA-256 in its metadata.
         """
@@ -92,26 +121,54 @@ class Detector:
         )
 
     def riskier_than(self, score: float) -> float:
-        """Share of development logins (out-of-fold) with a lower score than ``score``."""
+        """Share of development logins (out-of-fold) with a lower score than ``score``.
+
+        Args:
+            score: A takeover score.
+
+        Returns:
+            The share, between 0 and 1; NaN when the detector has no reference scores.
+        """
         if self.reference_scores.size == 0:
             return float("nan")
         lower = np.searchsorted(self.reference_scores, score, side="left")
         return float(lower / self.reference_scores.size)
 
     def score(self, frame: pl.DataFrame) -> FloatArray:
-        """Takeover score of every row (probability-like, higher = more suspicious)."""
+        """Takeover score of every row (probability-like, higher = more suspicious).
+
+        Args:
+            frame: Logins with every model input column.
+
+        Returns:
+            One score per row of ``frame``, between 0 and 1.
+        """
         result: FloatArray = self.pipeline.predict_proba(to_model_frame(frame, self.columns))[:, 1]
         return result
 
     def tier(self, score: float) -> str:
-        """Response tier for one score: the strictest tier whose threshold it reaches."""
+        """Response tier for one score: the strictest tier whose threshold it reaches.
+
+        Args:
+            score: A takeover score.
+
+        Returns:
+            The tier name, or ``allow`` when the score reaches no threshold.
+        """
         for name, threshold in self.thresholds.items():
             if score >= threshold:
                 return name
         return ALLOW
 
     def tiers(self, scores: FloatArray) -> npt.NDArray[np.str_]:
-        """Response tier of every score at once (the same rule as :meth:`tier`)."""
+        """Response tier of every score at once (the same rule as :meth:`tier`).
+
+        Args:
+            scores: Takeover scores.
+
+        Returns:
+            The tier name of each score, same shape as ``scores``.
+        """
         result = np.full(scores.shape, ALLOW, dtype=object)
         for name, threshold in reversed(self.thresholds.items()):  # strictest assigned last
             result[scores >= threshold] = name
@@ -134,12 +191,17 @@ class Detector:
         return names, values
 
     def set_reference(self, typical: pl.DataFrame) -> None:
-        """Explain relative to these logins (e.g. a sample of ordinary ones) instead of the model's
-        average training login, which campaign balancing and undersampling make far riskier than usual.
+        """Explain relative to these logins instead of the model's average training login.
+
+        The reference is, for example, a sample of ordinary logins: campaign balancing and
+        undersampling make the model's average training login far riskier than usual.
 
         The mean tree-SHAP vector of the reference is subtracted, so contributions still add up to
         ``score(login) - mean score(reference)``; per-input values are an approximation of SHAP computed
         against that background. Units are the model's output (probabilities for the random forest).
+
+        Args:
+            typical: The reference logins, with every model input column.
         """
         _, values = self._shap(typical)
         self._reference = values.mean(axis=0)
@@ -148,6 +210,13 @@ class Detector:
         """Every model input's tree-SHAP contribution for each row (relative to the reference, if set).
 
         With a reference, a row's contributions add up to its score minus the reference's mean score.
+
+        Args:
+            frame: Logins with every model input column.
+
+        Returns:
+            The names of the model inputs (after preprocessing), and the contributions, shape
+            ``(rows, inputs)``.
         """
         names, values = self._shap(frame)
         if self._reference is not None:
@@ -159,6 +228,14 @@ class Detector:
 
         With :meth:`set_reference`, a contribution is relative to a typical login: positive means
         "this input makes the login riskier than a typical one".
+
+        Args:
+            frame: Logins with every model input column.
+            top: Number of inputs to keep per row.
+
+        Returns:
+            One frame per row of ``frame``, largest absolute contribution first: ``input`` (model
+            input name), ``value`` (the login's original value, as text) and ``contribution``.
         """
         names, values = self.contributions(frame)
         explanations = []
@@ -188,7 +265,16 @@ def _format_share(value: float) -> str:
 
 
 def format_value(name: str, value: object) -> str:
-    """A feature value for people: shares as percentages, flags as yes/no, missing as a dash."""
+    """A feature value for people: shares as percentages, flags as yes/no, missing as a dash.
+
+    Args:
+        name: Feature name; a float whose name contains ``share`` is shown as a percentage.
+        value: The value; None, booleans, floats and dates are formatted, anything else is
+            converted with ``str``.
+
+    Returns:
+        The text to display.
+    """
     if value is None:
         return "—"
     if isinstance(value, bool):
@@ -217,5 +303,13 @@ def _raw_value(raw: pl.DataFrame, name: str, row: int) -> str:
 
 
 def describe(columns: Sequence[str], row: Mapping[str, Any]) -> dict[str, Any]:
-    """The subset of ``row`` that is model input, in model order (for display)."""
+    """The subset of ``row`` that is model input, in model order (for display).
+
+    Args:
+        columns: The model input columns, in model order.
+        row: A login's values by column name.
+
+    Returns:
+        The values of the model inputs present in ``row``, by column name, in model order.
+    """
     return {c: row[c] for c in columns if c in row}

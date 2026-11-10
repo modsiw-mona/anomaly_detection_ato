@@ -35,6 +35,7 @@ N_FOLDS = 3
 
 @pytest.fixture(scope="module")
 def features() -> pl.DataFrame:
+    """Random-event features where a takeover is any login from a new country for the user."""
     frame = build_features(_events(_random_events(1_500, seed=5)), _config()).collect()
     # a learnable signal: takeovers are logins from a new country for the user
     return frame.with_columns(pl.col("new_country").fill_null(value=False).alias("label_ato"))
@@ -42,11 +43,13 @@ def features() -> pl.DataFrame:
 
 @pytest.fixture(scope="module")
 def folds(features: pl.DataFrame) -> pl.DataFrame:
+    """Three user-grouped folds of the features, one repeat."""
     return assign_folds(features, n_folds=N_FOLDS, n_repeats=1)
 
 
 @pytest.fixture(scope="module")
 def fold(features: pl.DataFrame, folds: pl.DataFrame) -> np.ndarray:
+    """Fold number of each login under ``fold_0``."""
     return fold_per_login(features, folds, "fold_0")
 
 
@@ -54,9 +57,11 @@ class Spy:
     """A fitter that records what it was trained on and scores by event id."""
 
     def __init__(self) -> None:
+        """Start with no recorded training frames."""
         self.trained_on: list[pl.DataFrame] = []
 
     def __call__(self, train: pl.DataFrame, columns: Sequence[str]) -> Scorer:
+        """Record the training frame and return a scorer that echoes the event id."""
         self.trained_on.append(train)
         return lambda frame: frame["event_id"].cast(pl.Float64).to_numpy()
 
@@ -64,6 +69,7 @@ class Spy:
 def test_out_of_fold_scores_every_login_without_training_on_its_user(
     features: pl.DataFrame, folds: pl.DataFrame, fold: np.ndarray
 ) -> None:
+    """``out_of_fold`` scores every login with a model that never trained on that login's user."""
     spy = Spy()
     scores = out_of_fold(features, fold, spy, feature_columns())
     assert np.array_equal(scores, features["event_id"].cast(pl.Float64).to_numpy())
@@ -74,6 +80,7 @@ def test_out_of_fold_scores_every_login_without_training_on_its_user(
 
 
 def test_hidden_takeovers_never_reach_training(features: pl.DataFrame, fold: np.ndarray) -> None:
+    """Hidden takeovers are kept out of training while hidden legitimate logins stay in."""
     hide = (features["device_type"] == "mobile").to_numpy()
     hidden_ids = set(features.filter(pl.Series(hide) & pl.col("label_ato"))["event_id"])
     assert hidden_ids, "the test needs hidden takeovers"
@@ -89,6 +96,8 @@ def test_hidden_takeovers_never_reach_training(features: pl.DataFrame, fold: np.
 def test_supervised_candidates_learn_a_real_signal(
     name: str, features: pl.DataFrame, fold: np.ndarray
 ) -> None:
+    """Every supervised candidate and PU bagging beat 10 times the chance PR-AUC out of fold."""
+
     def fit(train: pl.DataFrame, columns: Sequence[str]) -> Scorer:  # toy data: keep more legit
         if name == "PU bagging":
             return fit_pu_bagging(train, columns, n_bags=3, negative_share=NEGATIVE_SHARE)
@@ -100,17 +109,20 @@ def test_supervised_candidates_learn_a_real_signal(
 
 
 def test_isolation_forest_scores_every_login(features: pl.DataFrame) -> None:
+    """The isolation forest gives a finite score to every login."""
     score = fit_isolation_forest(features, feature_columns())(features)
     assert score.shape == (features.height,)
     assert np.isfinite(score).all()
 
 
 def test_every_user_needs_a_fold(features: pl.DataFrame, folds: pl.DataFrame) -> None:
+    """``fold_per_login`` raises when a user has no fold."""
     with pytest.raises(ValueError, match="fold"):
         fold_per_login(features, folds.head(1), "fold_0")
 
 
 def test_candidates_by_name() -> None:
+    """``candidate`` builds every known model by name and rejects unknown names or bad options."""
     for name in (*SUPERVISED, "PU bagging", "isolation forest"):
         assert callable(candidate(name))
     with pytest.raises(KeyError):
@@ -120,6 +132,7 @@ def test_candidates_by_name() -> None:
 
 
 def test_group_metrics_compare_each_group_against_all_legitimate_logins() -> None:
+    """``group_metrics`` ranks each group's takeovers against every legitimate login."""
     y = np.array([True, True, False, False, False, False])
     score = np.array([0.9, 0.1, 0.5, 0.4, 0.3, 0.2])
     groups = {"first": np.array([True, False, False, False, False, False])}
@@ -130,6 +143,7 @@ def test_group_metrics_compare_each_group_against_all_legitimate_logins() -> Non
 
 
 def test_campaign_weights_balance_the_dominant_group_against_the_rest() -> None:
+    """``campaign_weights`` gives the dominant country's takeovers the weight of all the others."""
     sample = pl.DataFrame(
         {
             "label_ato": [True, True, True, True, False, False],
@@ -146,6 +160,7 @@ def test_campaign_weights_balance_the_dominant_group_against_the_rest() -> None:
 
 
 def test_campaign_balanced_training_learns(features: pl.DataFrame, fold: np.ndarray) -> None:
+    """A random forest trained with campaign balancing still learns the signal."""
     frame = features.with_columns(pl.col("country").cast(pl.String))
 
     def fit(train: pl.DataFrame, columns: Sequence[str]) -> Scorer:
@@ -161,6 +176,7 @@ def test_campaign_balanced_training_learns(features: pl.DataFrame, fold: np.ndar
 def test_fitted_pipelines_survive_a_joblib_round_trip(
     features: pl.DataFrame, tmp_path: Path
 ) -> None:
+    """Every supervised pipeline predicts the same after a joblib dump and load."""
     columns = feature_columns((*DEFAULT_GROUPS, "campaign", "travel"))
     x = to_model_frame(features, columns)
     for name in SUPERVISED:
@@ -174,6 +190,7 @@ def test_fitted_pipelines_survive_a_joblib_round_trip(
 def test_campaign_weights_reach_the_model(
     features: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Campaign balancing passes non-uniform sample weights to the model's ``fit``."""
     seen: dict[str, np.ndarray] = {}
     original = Pipeline.fit
 

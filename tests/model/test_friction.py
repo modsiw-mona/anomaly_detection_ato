@@ -28,6 +28,7 @@ def _toy() -> pl.DataFrame:
 
 
 def test_threshold_is_the_score_of_the_kth_takeover() -> None:
+    """``threshold_for_rate`` returns the k-th highest takeover score and rejects bad inputs."""
     scores = np.array([0.05, 0.9, 0.1, 0.8])
     assert threshold_for_rate(scores, 0.5) == pytest.approx(0.8)
     assert threshold_for_rate(scores, 0.75) == pytest.approx(0.1)
@@ -40,12 +41,14 @@ def test_threshold_is_the_score_of_the_kth_takeover() -> None:
 
 
 def test_rate_per_user_counts_only_legitimate_logins() -> None:
+    """``challenged_counts`` counts challenged logins per legitimate user only."""
     logins, counts = challenged_counts(_toy(), [0.6], score="score")
     assert len(logins) == TOY_USERS, "takeover users x and y are not legitimate users"
     assert sorted(counts[:, 0] / logins) == [0.0, 0.5, 1.0]
 
 
 def test_friction_at_a_fixed_threshold_and_at_a_detection_rate() -> None:
+    """``user_friction`` reports detection and per-user friction at fixed thresholds and rates."""
     result = user_friction(_toy(), thresholds={"fixed": 0.6}, rates=(0.5,))
     fixed = result["fixed"]
     assert fixed["detected"] == pytest.approx(HALF), "only the 0.92 takeover"
@@ -59,6 +62,7 @@ def test_friction_at_a_fixed_threshold_and_at_a_detection_rate() -> None:
 
 
 def test_a_login_scoring_exactly_the_threshold_is_challenged() -> None:
+    """A legitimate login scoring exactly the threshold counts as challenged."""
     frame = pl.DataFrame(
         {"user_id": ["a", "a", "x"], "label_ato": [False, False, True], "score": [0.5, 0.1, 0.5]}
     )
@@ -68,9 +72,12 @@ def test_a_login_scoring_exactly_the_threshold_is_challenged() -> None:
 
 
 def test_bootstrap_looks_up_the_right_threshold() -> None:
-    """Two takeovers, detect both: a replicate's threshold is the lower score (0.4) unless both draws
+    """Each bootstrap replicate uses the threshold of its own resampled takeovers.
+
+    Two takeovers, detect both: a replicate's threshold is the lower score (0.4) unless both draws
     are the higher one (1 in 4). A central interval (30th to 70th percentile) then holds only the
-    friction at 0.4, whose value differs from the friction at 0.8."""
+    friction at 0.4, whose value differs from the friction at 0.8.
+    """
     frame = pl.DataFrame(
         {
             "user_id": ["a", "a", "b", "c", "c", "x", "y"],
@@ -88,6 +95,7 @@ def test_bootstrap_looks_up_the_right_threshold() -> None:
 
 
 def test_bad_inputs_are_rejected() -> None:
+    """NaN scores, no legitimate logins and a threshold named like a rate raise ``ValueError``."""
     with pytest.raises(ValueError, match="NaN"):
         user_friction(_toy().with_columns(pl.when(pl.col("user_id") == "b").then(float("nan"))
                                           .otherwise(pl.col("score")).alias("score")))  # fmt: skip
@@ -98,6 +106,7 @@ def test_bad_inputs_are_rejected() -> None:
 
 
 def test_null_scores_are_rejected() -> None:
+    """Null scores raise ``ValueError``."""
     frame = _toy().with_columns(
         pl.when(pl.col("user_id") == "b").then(None).otherwise(pl.col("score")).alias("score")
     )
@@ -106,6 +115,7 @@ def test_null_scores_are_rejected() -> None:
 
 
 def test_bootstrap_interval_contains_the_estimate_and_is_reproducible() -> None:
+    """The friction bootstrap interval contains the point estimate and repeats exactly."""
     rng = np.random.default_rng(1)
     users = np.repeat(np.arange(400), 3)
     label = rng.random(users.size) < TAKEOVER_SHARE

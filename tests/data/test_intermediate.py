@@ -79,6 +79,7 @@ def _build(rows: dict[str, list[str | None]] = ROWS, **overrides: Any) -> pl.Dat
 
 
 def test_columns_are_standard_and_ordered() -> None:
+    """``standardise`` keeps only mapped columns, renamed, in a fixed order after an event id."""
     frame = _build()
     assert frame.columns == [
         EVENT_ID,
@@ -99,6 +100,7 @@ def test_columns_are_standard_and_ordered() -> None:
 
 
 def test_types() -> None:
+    """Each standard column gets its declared type; ASN and IP are stored as categories."""
     schema = _build().schema
     assert schema["user_id"] == pl.Int64
     assert schema["timestamp"] == pl.Datetime("ms")
@@ -111,6 +113,7 @@ def test_types() -> None:
 
 
 def test_values_are_parsed() -> None:
+    """Identifiers, timestamps, booleans, RTT and labels are parsed from text to their values."""
     frame = _build()
     assert frame["user_id"][0] == FIRST_USER_ID
     assert frame["timestamp"][0] == dt.datetime(2020, 2, 3, 12, 43, 30, 772000)
@@ -120,12 +123,14 @@ def test_values_are_parsed() -> None:
 
 
 def test_null_markers_apply_only_to_their_column() -> None:
+    """A null marker becomes null only in the column it is declared for."""
     frame = _build()
     assert frame["region"].to_list() == [None, "Nan", None, "Vestland"], "'Nan' is a real region"
     assert frame["user_agent"][3] == "-", "'-' is only a null marker where declared"
 
 
 def test_artefact_flags() -> None:
+    """Artefact flags mark ASNs at or above the limit and IPs inside the declared network."""
     frame = _build()
     assert frame["asn_is_placeholder"].to_list() == [False, True, True, False]
     assert frame["ip_is_placeholder"].to_list() == [True, False, False, True], (
@@ -134,6 +139,7 @@ def test_artefact_flags() -> None:
 
 
 def test_artefact_flags_are_never_null() -> None:
+    """An invalid or missing IP gives an artefact flag of False, never null."""
     rows = {**ROWS, "IP": ["not-an-ip", "::1", "10.0.0.1", None]}
     frame = _build(rows)
     assert frame["ip_is_placeholder"].to_list() == [False, False, True, False]
@@ -144,12 +150,14 @@ def test_artefact_flags_are_never_null() -> None:
     [("Ok", "maybe"), ("When", "03/02/2020"), ("User", "abc"), ("RTT", "fast")],
 )
 def test_unparseable_values_fail_loudly(column: str, bad_value: str) -> None:
+    """A value that cannot be parsed to its type raises a polars error."""
     rows = {**ROWS, column: [bad_value, *ROWS[column][1:]]}
     with pytest.raises(pl.exceptions.PolarsError):
         _build(rows)
 
 
 def test_string_identifiers_by_default() -> None:
+    """Without ``identifier_dtypes`` the user id stays a string."""
     assert _build(identifier_dtypes={})["user_id"].dtype == pl.String
 
 
@@ -165,11 +173,13 @@ def test_string_identifiers_by_default() -> None:
     ],
 )  # fmt: skip
 def test_invalid_settings_are_rejected(overrides: dict[str, Any]) -> None:
+    """Settings on unmapped or wrong-kind fields, or with malformed values, are rejected."""
     with pytest.raises(ValidationError):
         _config(**overrides)
 
 
 def test_build_intermediate_writes_parquet(tmp_path: Path) -> None:
+    """``build_intermediate`` writes the standardised frame to parquet with no partial file left."""
     raw_file = tmp_path / "toy.csv"
     pl.DataFrame(ROWS).write_csv(raw_file)
     out = build_intermediate(_config(), raw_file, tmp_path / "out" / "toy.parquet")

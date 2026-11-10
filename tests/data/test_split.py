@@ -21,6 +21,7 @@ def _features(n_users: int = N_USERS, n_takeover_users: int = 50, seed: int = 0)
 
 
 def test_every_user_gets_exactly_one_side() -> None:
+    """``assign_split`` puts every user on exactly one side, ``dev`` or ``test``."""
     split = assign_split(_features())
     assert split["user_id"].is_unique().all()
     assert split.height == N_USERS
@@ -28,6 +29,7 @@ def test_every_user_gets_exactly_one_side() -> None:
 
 
 def test_stratified_by_takeover_at_user_level() -> None:
+    """Users with and without a takeover each send 20% of their users to test."""
     split = assign_split(_features())
     shares = split.group_by("has_takeover").agg((pl.col("split") == "test").mean().alias("test"))
     assert shares.filter("has_takeover")["test"].item() == pytest.approx(0.2)  # 10 of 50
@@ -35,6 +37,7 @@ def test_stratified_by_takeover_at_user_level() -> None:
 
 
 def test_deterministic_and_independent_of_row_order() -> None:
+    """The split depends on the seed but not on the order of the rows."""
     a = assign_split(_features(seed=0))
     b = assign_split(_features(seed=0).sort("label_ato", "user_id"))
     assert a.equals(b)
@@ -43,5 +46,6 @@ def test_deterministic_and_independent_of_row_order() -> None:
 
 @pytest.mark.parametrize("share", [0.0, 1.0, -0.1])
 def test_invalid_share(share: float) -> None:
+    """A test share outside (0, 1) raises ``ValueError``."""
     with pytest.raises(ValueError, match="test_share"):
         assign_split(_features(), test_share=share)

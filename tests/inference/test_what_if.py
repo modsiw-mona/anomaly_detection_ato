@@ -49,11 +49,13 @@ def _login(**changes: object) -> pl.DataFrame:
 
 
 def test_first_login_has_no_history_rules() -> None:
+    """A first login has no previous login, so no history rule forces a signal."""
     login = _login(prior_successes=0)
     assert required_signals(login, login, {}, None) == {}
 
 
 def test_never_seen_network_is_new_for_the_account_and_brings_a_new_ip() -> None:
+    """A never-seen network forces the new-network and new-IP signals on."""
     login = _login()
     located = _login(asn_prior_users=0, global_share_asn=0.0)
     required = required_signals(login, located, {}, "1 day to 1 week")
@@ -62,6 +64,7 @@ def test_never_seen_network_is_new_for_the_account_and_brings_a_new_ip() -> None
 
 
 def test_implied_signals_follow_their_cause() -> None:
+    """A new country forces a new region, a new browser a new user agent; a new city is free."""
     login = _login()
     required = required_signals(login, login, {"new_country": True, "new_browser": True}, None)
     assert required["new_region"][0] is True
@@ -70,12 +73,14 @@ def test_implied_signals_follow_their_cause() -> None:
 
 
 def test_no_region_rule_when_the_region_is_unknown() -> None:
+    """No new-region rule applies when the login's region is unknown."""
     login = _login(region_missing=True)
     assert "new_region" not in required_signals(login, login, {"new_country": True}, None)
 
 
 @pytest.mark.parametrize(("gap", "fixed"), [(TRAVEL_GAP, False), ("1 day to 1 week", True)])
 def test_travel_needs_a_recent_previous_login(gap: str, fixed: bool) -> None:
+    """Travel can stay on only after a recent previous login; otherwise it is forced off."""
     login = _login()
     required = required_signals(login, login, {"country_change_1h": True}, gap)
     assert ("country_change_1h" in required) is fixed
@@ -84,12 +89,14 @@ def test_travel_needs_a_recent_previous_login(gap: str, fixed: bool) -> None:
 
 
 def test_new_country_soon_after_the_previous_login_is_travel() -> None:
+    """A new country soon after the previous login forces the travel signal on."""
     login = _login(user_prior_countries=2)
     required = required_signals(login, login, {"new_country": True}, TRAVEL_GAP)
     assert required["country_change_1h"][0] is True
 
 
 def test_with_one_earlier_country_travel_follows_new_country() -> None:
+    """With one earlier country, travel is on exactly when the country is new."""
     login = _login(user_prior_countries=1)
     on = required_signals(login, login, {"new_country": True}, TRAVEL_GAP)
     assert on["country_change_1h"][0] is True
@@ -101,6 +108,7 @@ def test_with_one_earlier_country_travel_follows_new_country() -> None:
 @pytest.mark.parametrize("countries", [1, 2])
 @pytest.mark.parametrize("gap", [TRAVEL_GAP, "1 day to 1 week"])
 def test_new_country_turned_on_by_the_viewer_is_never_locked(countries: int, gap: str) -> None:
+    """A new country the viewer switches on is never locked, whatever the history or gap."""
     login = _login(user_prior_countries=countries)
     assert "new_country" not in required_signals(login, login, {"new_country": True}, gap)
 
@@ -114,6 +122,7 @@ def test_travel_turned_on_by_the_viewer_stays_free_when_it_can_happen() -> None:
 
 
 def test_attack_ip_must_agree_with_its_network() -> None:
+    """The attack-IP flag is forced to agree with its network, unless the IP was never seen."""
     clean = _login(asn_prior_attack_share=0.0)
     assert required_signals(clean, clean, {}, None)["attack_ip"][0] is False
     attack_only = _login(asn_prior_attack_share=1.0, prior_successes=0)
@@ -128,6 +137,7 @@ def test_attack_ip_must_agree_with_its_network() -> None:
      ("device", {"new_device_type", "new_os", "new_browser", "new_user_agent"})],
 )  # fmt: skip
 def test_with_one_earlier_login_a_replaced_value_is_new(group: str, signals: set[str]) -> None:
+    """With one earlier login, replacing a network, browser or device makes its signals new."""
     login = _login(prior_successes=1)
     required = required_signals(login, login, {}, None, {group})
     assert {s for s, (value, _) in required.items() if value} == signals
@@ -144,11 +154,13 @@ def test_a_replaced_value_is_not_forced_new_when_the_real_one_was_new() -> None:
 
 
 def test_with_one_earlier_country_a_replaced_country_is_new() -> None:
+    """With one earlier country, replacing the country forces the new-country signal on."""
     login = _login(user_prior_countries=1)
     assert required_signals(login, login, {}, None, {"country"})["new_country"][0] is True
 
 
 def test_gap_ranges() -> None:
+    """``gap_of`` maps the hours since the previous login to a named range, travel first."""
     assert gap_of(None) is None
     assert gap_of(0.5) == TRAVEL_GAP
     assert gap_of(1.0) == "1 hour to 1 day"
@@ -157,6 +169,7 @@ def test_gap_ranges() -> None:
 
 
 def test_attack_share_follows_the_attack_flag() -> None:
+    """The IP's attack share is 1 on an attack IP, else 0, and stays unknown for a new IP."""
     assert with_attack_share(_login(attack_ip=True))["ip_prior_attack_share"][0] == 1.0
     assert with_attack_share(_login(ip_prior_attack_share=1.0))["ip_prior_attack_share"][0] == 0.0
     never_seen = _login(attack_ip=True, ip_prior_attack_share=None)
@@ -164,6 +177,7 @@ def test_attack_share_follows_the_attack_flag() -> None:
 
 
 def test_typical_row_is_one_real_login() -> None:
+    """``typical_row`` returns the middle login by one column, and nothing for an empty pool."""
     pool = pl.DataFrame({"event_id": [1, 2, 3], "share": [0.3, 0.1, 0.2], "users": [30, 10, 20]})
     assert typical_row(pool, "share", ["share", "users"]) == {"share": 0.2, "users": 20}
     assert typical_row(pool.clear(), "share", ["share"]) == {}

@@ -22,6 +22,7 @@ from tests.pipelines.training_pipeline.test_run import TRAINING, _toy_events
 
 @pytest.fixture(scope="module")
 def config() -> DatasetConfig:
+    """The toy dataset configuration, with the label window set."""
     return _config(**WINDOW)
 
 
@@ -49,6 +50,7 @@ def data_dir(trained: Path, tmp_path: Path) -> Path:
 
 
 def test_scores_and_tiers_every_login_of_the_side(config: DatasetConfig, data_dir: Path) -> None:
+    """The run scores every test login like the saved detector and tiers it by its thresholds."""
     report = pipeline.run(config, data_dir)
     assert report["status"] in {"passed", "passed with drift warning"}
     paths = pipeline.output_paths(config, data_dir, "test")
@@ -72,6 +74,7 @@ def test_scores_and_tiers_every_login_of_the_side(config: DatasetConfig, data_di
 
 
 def test_labels_are_never_used(config: DatasetConfig, data_dir: Path) -> None:
+    """Flipping the takeover labels changes neither the scores nor the tiers."""
     pipeline.run(config, data_dir)
     paths = pipeline.output_paths(config, data_dir, "test")
     before = pl.read_parquet(paths["predictions"])
@@ -86,6 +89,7 @@ def test_labels_are_never_used(config: DatasetConfig, data_dir: Path) -> None:
 def test_an_invalid_batch_is_not_scored_and_no_earlier_scores_stay(
     config: DatasetConfig, data_dir: Path
 ) -> None:
+    """A batch that fails validation is not scored, and an earlier run's outputs are removed."""
     pipeline.run(config, data_dir)  # an earlier, successful run
     assert pipeline.output_paths(config, data_dir, "test")["scores"].is_file()
     path = features_path(config, data_dir)
@@ -101,6 +105,7 @@ def test_an_invalid_batch_is_not_scored_and_no_earlier_scores_stay(
 def test_drift_is_reported_but_the_batch_is_still_scored(
     config: DatasetConfig, data_dir: Path
 ) -> None:
+    """Drift on the model's inputs is reported as a warning, and the batch is still scored."""
     report = pipeline.run(config, data_dir, drift_limit=1e-9)
     assert report["status"] == "passed with drift warning"
     assert report["drift"]["features_over_the_limit"]
@@ -121,6 +126,7 @@ def test_drift_is_reported_but_the_batch_is_still_scored(
 def test_a_model_that_does_not_match_its_metadata_is_refused(
     config: DatasetConfig, data_dir: Path
 ) -> None:
+    """The run refuses a model file whose SHA-256 differs from its metadata."""
     model = data_dir / "06_models" / f"{config.name}_model.joblib"
     model.write_bytes(model.read_bytes() + b"tampered")
     with pytest.raises(ValueError, match="does not match"):
@@ -128,6 +134,7 @@ def test_a_model_that_does_not_match_its_metadata_is_refused(
 
 
 def test_the_development_side_is_marked_in_sample(config: DatasetConfig, data_dir: Path) -> None:
+    """Scoring the development side marks the report in-sample, with no drift."""
     report = pipeline.run(config, data_dir, side="dev")
     assert report["in_sample"] is True
     assert report["drift"]["largest_score"] == 0
@@ -136,6 +143,7 @@ def test_the_development_side_is_marked_in_sample(config: DatasetConfig, data_di
 def test_an_empty_batch_is_refused(
     config: DatasetConfig, data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The run refuses a side with no logins."""
     real = load_side
 
     def empty_test(cfg: DatasetConfig, folder: Path, side: str) -> pl.LazyFrame:
@@ -148,12 +156,15 @@ def test_an_empty_batch_is_refused(
 
 
 def test_unknown_side(config: DatasetConfig, data_dir: Path) -> None:
+    """The run refuses a side other than development or test."""
     with pytest.raises(ValueError, match="side"):
         pipeline.run(config, data_dir, side="holdout")
 
 
 @pytest.mark.parametrize("fails", [False, True])
 def test_main_exit_code(monkeypatch: pytest.MonkeyPatch, *, fails: bool) -> None:
+    """``main`` exits with 0 on success and 1 on a schema failure."""
+
     def fake_run(*_: object, **__: object) -> dict[str, object]:
         if fails:
             error = SchemaErrors.__new__(SchemaErrors)

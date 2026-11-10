@@ -64,6 +64,8 @@ select = [
     "SIM",
     # tryceratops
     "TRY",
+    # pydocstyle: every public module, class and function has a docstring (Google convention)
+    "D",
     ]
 ignore = [
     "E203",  # Like Black, ignore E203 (whitespace before ':') to avoid conflicts.
@@ -87,6 +89,11 @@ line-ending = "auto"
 # Enable auto-formatting of code examples in docstrings.
 docstring-code-format = true
 
+[lint.pydocstyle]
+# Google style: a summary line, then Args:, Returns:, Raises: sections. When a docstring has an
+# Args: section, every parameter must be in it (D417).
+convention = "google"
+
 [lint.mccabe]
 # Unlike Flake8, default to a complexity level of 10.
 max-complexity = 10
@@ -97,4 +104,6 @@ known-third-party = ["fastapi", "pydantic"]
 [lint.per-file-ignores]
 # Notebooks print text for people: typographic symbols (–, ×, −) are intended, and small literal
 # constants (array dimensions, thresholds stated in the prose next to them) read better inline.
-"notebooks/**/*.ipynb" = ["RUF001", "PLR2004"]
+"notebooks/**/*.ipynb" = ["RUF001", "PLR2004", "D"]
+# The Streamlit demo is a script: its functions draw parts of the page and keep prose docstrings.
+"notebooks/**/*.py" = ["D"]

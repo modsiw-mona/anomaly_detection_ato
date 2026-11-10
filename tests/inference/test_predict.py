@@ -20,6 +20,7 @@ TOP = 4
 
 @pytest.fixture(scope="module")
 def features() -> pl.DataFrame:
+    """A toy feature table whose takeover label is the new-country flag."""
     frame = build_features(_events(_random_events(1_500, seed=5)), _config()).collect()
     return frame.with_columns(pl.col("new_country").fill_null(value=False).alias("label_ato"))
 
@@ -42,11 +43,13 @@ def saved(features: pl.DataFrame, tmp_path_factory: pytest.TempPathFactory) -> P
 
 
 def test_budgets_must_be_strictest_first() -> None:
+    """``alert_thresholds`` refuses budgets that are not ordered strictest first."""
     with pytest.raises(ValueError, match="strictest"):
         alert_thresholds(np.linspace(0, 1, 100), {"loose": 0.01, "strict": 0.001})
 
 
 def test_thresholds_follow_the_budgets() -> None:
+    """Each threshold flags the share of scores its alert budget allows, strictest tier first."""
     scores = np.linspace(0, 1, 100_001)
     thresholds = alert_thresholds(scores)
     assert list(thresholds) == list(BUDGETS), "strictest tier first"
@@ -55,6 +58,7 @@ def test_thresholds_follow_the_budgets() -> None:
 
 
 def test_tiers(saved: Path) -> None:
+    """A score gets the strictest tier it reaches; ``riskier_than`` ranks it among dev scores."""
     detector = Detector.load(saved, "toy")
     block, step_up = detector.thresholds["review / block"], detector.thresholds["step-up"]
     assert detector.tier(block) == "review / block"
@@ -68,6 +72,7 @@ def test_tiers(saved: Path) -> None:
 
 
 def test_loaded_detector_scores_and_explains(saved: Path, features: pl.DataFrame) -> None:
+    """A loaded detector scores in [0, 1] and lists the top contributions, largest first."""
     detector = Detector.load(saved, "toy")
     rows = features.filter(pl.col("label_ato")).head(3)
     scores = detector.score(rows)
@@ -82,6 +87,7 @@ def test_loaded_detector_scores_and_explains(saved: Path, features: pl.DataFrame
 
 
 def test_explanations_name_the_original_value() -> None:
+    """Explanations show the original value of an encoded input, not the encoded one."""
     raw = pl.DataFrame(
         {
             "asn_prior_attack_share": [None, 0.5],
@@ -97,6 +103,7 @@ def test_explanations_name_the_original_value() -> None:
 
 
 def test_values_are_formatted_for_people() -> None:
+    """``format_value``: shares as percentages, flags as yes/no, missing as a dash, two decimals."""
     assert format_value("global_share_country", 0.0017767) == "0.18%"
     assert format_value("global_share_ip", 0.00003) == "< 0.01%"
     assert format_value("global_share_ip", 0.0) == "0.00%"
@@ -107,6 +114,7 @@ def test_values_are_formatted_for_people() -> None:
 
 
 def test_explanations_relative_to_typical_logins(saved: Path, features: pl.DataFrame) -> None:
+    """With a reference set, contributions are relative to it and average out over its rows."""
     detector = Detector.load(saved, "toy")
     rows = features.head(5)
     absolute = detector.explain(rows, top=100)[0]
@@ -120,6 +128,7 @@ def test_explanations_relative_to_typical_logins(saved: Path, features: pl.DataF
 
 
 def test_explanations_add_up_to_the_score(saved: Path, features: pl.DataFrame) -> None:
+    """Contributions add up to the score minus the base value, or minus the reference mean."""
     detector = Detector.load(saved, "toy")
     rows = features.filter(pl.col("label_ato")).head(2)
     reference = features.filter(~pl.col("label_ato")).head(20)
@@ -138,6 +147,7 @@ def test_explanations_add_up_to_the_score(saved: Path, features: pl.DataFrame) -
 
 
 def test_explanations_show_flags_as_yes_no(saved: Path, features: pl.DataFrame) -> None:
+    """Explanations show a boolean input such as ``attack_ip`` as yes or no."""
     detector = Detector.load(saved, "toy")
     explanation = detector.explain(features.head(1), top=10 * len(detector.columns))[0]
     flag = explanation.filter(pl.col("input") == "attack_ip")["value"][0]
@@ -154,6 +164,7 @@ def _copy_model(saved: Path, folder: Path, metadata: dict[str, object]) -> Path:
 
 
 def test_a_model_that_does_not_match_its_metadata_is_refused(saved: Path, tmp_path: Path) -> None:
+    """The detector refuses a model file whose SHA-256 differs from its metadata."""
     columns = json.loads((saved / "06_models" / "toy_model.json").read_text())["columns"]
     folder = _copy_model(saved, tmp_path / "m", {"columns": columns, "joblib_sha256": "0" * 64})
     with pytest.raises(ValueError, match="does not match"):
@@ -166,6 +177,7 @@ def test_a_model_that_does_not_match_its_metadata_is_refused(saved: Path, tmp_pa
 
 
 def test_load_uses_the_thresholds_saved_with_the_model(saved: Path, tmp_path: Path) -> None:
+    """``Detector.load`` uses saved thresholds, else computes them from out-of-fold scores."""
     root = tmp_path / "data"
     columns = json.loads((saved / "06_models" / "toy_model.json").read_text())["columns"]
     saved_thresholds = {"review / block": 0.9, "step-up": 0.6}
@@ -181,6 +193,7 @@ def test_load_uses_the_thresholds_saved_with_the_model(saved: Path, tmp_path: Pa
 
 
 def test_tiers_of_many_scores_follow_the_rule_for_one(saved: Path) -> None:
+    """``tiers`` gives each score in an array the tier that ``tier`` gives it alone."""
     detector = Detector.load(saved, "toy")
     block, step_up = detector.thresholds["review / block"], detector.thresholds["step-up"]
     scores = np.array([0.0, step_up - 1e-9, step_up, block - 1e-9, block, 1.0])

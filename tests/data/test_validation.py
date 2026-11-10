@@ -40,6 +40,7 @@ def _failed_checks(frame: pl.DataFrame) -> set[str]:
 
 
 def test_valid_frame_passes_without_warnings() -> None:
+    """A frame that meets every rule passes ``validate_intermediate`` without warnings."""
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         out = validate_intermediate(_frame(), _config())
@@ -47,6 +48,7 @@ def test_valid_frame_passes_without_warnings() -> None:
 
 
 def test_takeover_on_failed_login_is_a_warning_not_an_error() -> None:
+    """A takeover label on a failed login raises a warning, not an error."""
     with pytest.warns(SchemaWarning, match="takeover_on_successful_login"):
         validate_intermediate(_frame(ROWS), _config())
 
@@ -61,11 +63,13 @@ def test_takeover_on_failed_login_is_a_warning_not_an_error() -> None:
     ],
 )
 def test_dataset_rules_catch_their_violation(column: str, value: str, check: str) -> None:
+    """A value that breaks a dataset rule fails that rule's check."""
     rows: Rows = {**CLEAN_ROWS, column: [value, *CLEAN_ROWS[column][1:]]}
     assert check in _failed_checks(_frame(rows))
 
 
 def test_duplicate_user_and_timestamp_is_an_error() -> None:
+    """Two logins with the same user and timestamp fail the uniqueness check."""
     rows: Rows = {
         **CLEAN_ROWS,
         "User": ["42", "42", "42", "7"],
@@ -75,6 +79,7 @@ def test_duplicate_user_and_timestamp_is_an_error() -> None:
 
 
 def test_required_field_cannot_be_null() -> None:
+    """A null in a required field fails the not-nullable check."""
     frame = _frame().with_columns(
         pl.when(pl.col("event_id") == 0).then(None).otherwise(pl.col("user_id")).alias("user_id")
     )
@@ -82,15 +87,18 @@ def test_required_field_cannot_be_null() -> None:
 
 
 def test_wrong_storage_type_is_an_error() -> None:
+    """A column stored with the wrong dtype fails validation."""
     frame = _frame().with_columns(pl.col("rtt_ms").cast(pl.Int64))
     assert any(check.startswith("dtype") for check in _failed_checks(frame))
 
 
 def test_unexpected_column_is_an_error() -> None:
+    """A column outside the schema fails validation."""
     assert "column_in_schema" in _failed_checks(_frame().with_columns(pl.lit(1).alias("extra")))
 
 
 def test_rba_schema_covers_every_intermediate_column() -> None:
+    """The RBA schema has exactly the columns of the RBA intermediate dataset."""
     schema = build_schema(load_dataset_config("rba"))
     assert set(schema.columns) == {
         "event_id", "user_id", "timestamp", "login_success", "ip", "asn", "device_type",

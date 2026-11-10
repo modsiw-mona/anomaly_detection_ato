@@ -26,6 +26,7 @@ RowPicker = Callable[[pl.DataFrame], int]
 
 @pytest.fixture
 def features() -> pl.DataFrame:
+    """Feature table built from 400 random events, with both first and returning logins."""
     frame = build_features(_events(_random_events(400, seed=3)), _config(**WINDOW)).collect()
     assert frame["first_success"].any() and not frame["first_success"].all()
     return frame
@@ -62,10 +63,12 @@ def _on_row(column: str, value: pl.Expr, row: RowPicker = _returning) -> Mutatio
 
 
 def test_features_built_by_the_pipeline_pass(features: pl.DataFrame) -> None:
+    """Features built by ``build_features`` from random events pass ``validate_features``."""
     assert validate_features(features, _config(**WINDOW)).height == features.height
 
 
 def test_hand_built_features_pass() -> None:
+    """Features built from the hand-built events pass ``validate_features``."""
     frame = build_features(_events(HAND_BUILT), _config(**WINDOW)).collect()
     assert validate_features(frame, _config(**WINDOW)).height == frame.height
 
@@ -118,21 +121,25 @@ def test_hand_built_features_pass() -> None:
 def test_each_rule_catches_its_violation(
     features: pl.DataFrame, mutation: Mutation, check: str
 ) -> None:
+    """Breaking one feature rule on one row makes that rule's check fail."""
     assert check in _failed_checks(mutation(features))
 
 
 def test_login_outside_the_label_window_is_an_error(features: pl.DataFrame) -> None:
+    """A login dated outside the label window fails the ``label_window`` check."""
     late = features.with_columns(pl.col("timestamp").dt.offset_by("1y"))
     assert "label_window" in _failed_checks(late)
 
 
 def test_unexpected_column_and_wrong_type_are_errors(features: pl.DataFrame) -> None:
+    """An extra column or a column of the wrong dtype fails validation."""
     assert "column_in_schema" in _failed_checks(features.with_columns(pl.lit(1).alias("extra")))
     retyped = features.with_columns(pl.col("prior_successes").cast(pl.Int64))
     assert any(check.startswith("dtype") for check in _failed_checks(retyped))
 
 
 def test_unknown_country_and_network_and_a_zero_rtt_are_valid() -> None:
+    """Unknown country, unknown network and an RTT of zero are valid feature values."""
     events = _random_events(400, seed=4)
     for i, event in enumerate(events):
         if i % 7 == 0:
@@ -147,6 +154,7 @@ def test_unknown_country_and_network_and_a_zero_rtt_are_valid() -> None:
 
 
 def test_a_dataset_without_some_fields_validates_and_keeps_its_rules() -> None:
+    """Without OS, RTT and region the table validates and the signal-count rule still applies."""
     columns = {k: v for k, v in ALL_COLUMNS.items() if k not in {"os", "rtt_ms", "region"}}
     config = _config(**WINDOW, columns=columns)
     frame = build_features(_events(_random_events(400, seed=3)), config).collect()
@@ -160,6 +168,7 @@ def test_a_dataset_without_some_fields_validates_and_keeps_its_rules() -> None:
 
 
 def test_a_batch_to_score_needs_no_label(features: pl.DataFrame) -> None:
+    """With ``labelled=False`` a table without ``label_ato`` passes; by default it fails."""
     unlabelled = features.drop("label_ato")
     assert (
         validate_features(unlabelled, _config(**WINDOW), labelled=False).height == features.height
@@ -169,6 +178,7 @@ def test_a_batch_to_score_needs_no_label(features: pl.DataFrame) -> None:
 
 
 def test_a_new_feature_needs_a_rule(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``build_feature_schema`` raises when a feature group has a column without a rule."""
     groups = {**feature_definitions.FEATURE_GROUPS, "new": ("brand_new_feature",)}
     monkeypatch.setattr("data.feature_validation.FEATURE_GROUPS", groups)
     with pytest.raises(RuntimeError, match="brand_new_feature"):
@@ -193,23 +203,27 @@ def many_users() -> pl.DataFrame:
 
 
 def test_split_built_by_the_pipeline_passes(many_users: pl.DataFrame) -> None:
+    """A split made by ``assign_split`` passes ``validate_split`` for all 200 users."""
     split = assign_split(many_users.lazy())
     checked = validate_split(many_users.lazy(), split)
     assert checked.height == 200  # noqa: PLR2004
 
 
 def test_user_without_a_side_is_an_error(many_users: pl.DataFrame) -> None:
+    """A user of the feature table missing from the split is an error."""
     split = assign_split(many_users.lazy()).filter(pl.col("user_id") != 5)  # noqa: PLR2004
     assert "not_nullable" in _split_failures(many_users, split)
 
 
 def test_user_not_in_the_feature_table_is_an_error(many_users: pl.DataFrame) -> None:
+    """A split user absent from the feature table is an error."""
     split = assign_split(many_users.lazy())
     extra = pl.DataFrame({"user_id": [999], "has_takeover": [False], "split": ["dev"]})
     assert "not_nullable" in _split_failures(many_users, pl.concat([split, extra]))
 
 
 def test_takeover_flag_must_agree_with_the_labels(many_users: pl.DataFrame) -> None:
+    """A ``has_takeover`` flag that disagrees with the user's labels is an error."""
     split = assign_split(many_users.lazy()).with_columns(
         pl.when(pl.col("user_id") == 0)
         .then(pl.lit(value=False))
@@ -220,6 +234,7 @@ def test_takeover_flag_must_agree_with_the_labels(many_users: pl.DataFrame) -> N
 
 
 def test_moving_a_user_breaks_the_test_share(many_users: pl.DataFrame) -> None:
+    """Moving one test user to dev breaks the test share of its stratum."""
     split = assign_split(many_users.lazy())
     moved = split.filter(pl.col("split") == "test")["user_id"][0]
     split = split.with_columns(
@@ -232,6 +247,7 @@ def test_moving_a_user_breaks_the_test_share(many_users: pl.DataFrame) -> None:
 
 
 def test_swapping_two_users_of_a_stratum_is_an_error(many_users: pl.DataFrame) -> None:
+    """Swapping two users of a stratum keeps the shares but breaks the pre-registered split."""
     split = assign_split(many_users.lazy())
     plain = split.filter(~pl.col("has_takeover"))
     a = plain.filter(pl.col("split") == "test")["user_id"][0]
@@ -248,11 +264,13 @@ def test_swapping_two_users_of_a_stratum_is_an_error(many_users: pl.DataFrame) -
 
 
 def test_another_seed_is_an_error(many_users: pl.DataFrame) -> None:
+    """A split made with another seed does not match the pre-registered assignment."""
     reseeded = assign_split(many_users.lazy(), seed=7)
     assert "matches_the_pre_registered_assignment" in _split_failures(many_users, reseeded)
 
 
 def test_unknown_side_is_an_error(many_users: pl.DataFrame) -> None:
+    """A side other than ``dev`` or ``test`` is an error."""
     split = assign_split(many_users.lazy()).with_columns(
         pl.when(pl.col("user_id") == 0)
         .then(pl.lit("holdout"))

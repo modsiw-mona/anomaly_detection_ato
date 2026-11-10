@@ -85,7 +85,18 @@ class ConfigurationError(ValueError):
 
 
 def model_paths(config: DatasetConfig, data_dir: Path) -> dict[str, Path]:
-    """The files a training run writes, where the inference module and the demo read them."""
+    """The files a training run writes, where the inference module and the demo read them.
+
+    Args:
+        config: Dataset configuration; its ``name`` prefixes the file names.
+        data_dir: The repository's ``data`` folder.
+
+    Returns:
+        In publishing order: ``model`` (the fitted pipeline, ``06_models/<dataset>_model.joblib``),
+        ``out_of_fold`` (the out-of-fold development scores,
+        ``07_model_output/<dataset>_dev_oof.parquet``) and ``metadata``
+        (``06_models/<dataset>_model.json``, written last).
+    """
     return {
         "model": data_dir / "06_models" / f"{config.name}_model.joblib",
         "out_of_fold": data_dir / "07_model_output" / f"{config.name}_dev_oof.parquet",
@@ -96,12 +107,28 @@ def model_paths(config: DatasetConfig, data_dir: Path) -> dict[str, Path]:
 
 
 def report_path(config: DatasetConfig, data_dir: Path) -> Path:
-    """The record of the latest training run."""
+    """The record of the latest training run.
+
+    Args:
+        config: Dataset configuration; its ``name`` names the record file.
+        data_dir: The repository's ``data`` folder.
+
+    Returns:
+        ``<data_dir>/08_reporting/<dataset>_training_pipeline.json``; every run also keeps its own
+        copy in ``08_reporting/training_runs/``.
+    """
     return data_dir / "08_reporting" / f"{config.name}_training_pipeline.json"
 
 
 def sha256_of(path: Path) -> str:
-    """SHA-256 of a file, read in chunks."""
+    """SHA-256 of a file, read in chunks.
+
+    Args:
+        path: File to hash; it is read 1 MiB at a time, so a large file is never loaded whole.
+
+    Returns:
+        The digest as a hexadecimal string.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -110,7 +137,13 @@ def sha256_of(path: Path) -> str:
 
 
 def code_version() -> dict[str, Any]:
-    """Git commit of the code and whether tracked files had uncommitted changes (``None`` without git)."""
+    """Git commit of the code and whether tracked files had uncommitted changes.
+
+    Returns:
+        ``commit`` (the ``HEAD`` commit hash) and ``uncommitted_changes`` (True if a tracked file
+        differs from that commit; untracked files are ignored). Both are None when git is not
+        installed; each is None when its git command fails or takes more than 10 seconds.
+    """
     git = shutil.which("git")
     if git is None:
         return {"commit": None, "uncommitted_changes": None}
@@ -165,7 +198,18 @@ def _repeat_row(
 
 
 def cross_validation_summary(rows: list[dict[str, float]], folds: int) -> dict[str, float | None]:
-    """Average of the repeats, with the names and rounding of notebook 06 (``cv_15_folds``)."""
+    """Average of the repeats, with the names and rounding of notebook 06 (``cv_15_folds``).
+
+    Args:
+        rows: One dict of metrics per cross-validation repeat, with at least ``pr_auc`` (mean over
+            the repeat's folds) and ``pr_auc_std`` (standard deviation over those folds).
+        folds: Total number of folds over all repeats; it only names the PR-AUC key.
+
+    Returns:
+        ``pr_auc (<folds> folds)`` (mean PR-AUC of the repeats), ``std within repeat`` (mean of the
+        per-repeat standard deviations), ``std across repeats`` (None with a single repeat) and
+        the mean of every other metric, each rounded to 4 decimals.
+    """
     frame = pl.DataFrame(rows)
     summary: dict[str, Any] = {
         f"pr_auc ({folds} folds)": frame["pr_auc"].mean(),
@@ -180,6 +224,19 @@ def segment_masks(dev: pl.DataFrame, training: TrainingConfig) -> dict[str, Bool
     """Logins of each group of takeovers: the dominant campaign and the rest; first and returning.
 
     Checked before any training, so a configuration that does not fit the data fails at once.
+
+    Args:
+        dev: Development logins, with the column named in ``training.segments`` and
+            ``first_success``.
+        training: Training configuration; ``segments`` gives the campaign's column, value and name.
+
+    Returns:
+        One boolean array over the logins of ``dev`` per group: ``<segments.name>``,
+        ``not <segments.name>``, ``first login`` and ``returning account``. A null campaign value
+        counts as outside the campaign, and a null ``first_success`` as a returning account.
+
+    Raises:
+        ConfigurationError: If ``dev`` lacks a column the segments need.
     """
     needed = {training.segments.column, "first_success"}
     missing = needed - set(dev.columns)
@@ -200,7 +257,16 @@ def segment_masks(dev: pl.DataFrame, training: TrainingConfig) -> dict[str, Bool
 
 
 def single_login_seconds(scorer: Callable[[pl.DataFrame], FloatArray], dev: pl.DataFrame) -> float:
-    """Median time to score one login on its own, as a login service or the demo does."""
+    """Median time to score one login on its own, as a login service or the demo does.
+
+    Args:
+        scorer: Function that scores a frame of logins, one score per row.
+        dev: Logins to time; up to ``LATENCY_SAMPLE`` rows, evenly spaced over the frame, are
+            scored one call each.
+
+    Returns:
+        The median wall-clock time of one call, in seconds.
+    """
     rows = np.linspace(0, dev.height - 1, num=min(LATENCY_SAMPLE, dev.height), dtype=np.int64)
     times = []
     for row in rows:
@@ -253,6 +319,24 @@ def run(  # noqa: PLR0915 — one training run, step by step
     data_dir: Path,
 ) -> dict[str, Any]:
     """Train, validate and save the selected model; return the run record.
+
+    Only the development side is read. Every run, passed or failed, writes its record to
+    ``08_reporting/training_runs/`` and to :func:`report_path`; an error of the run is recorded in
+    it and raised again, while an error writing the record is only logged.
+
+    Args:
+        config: Dataset configuration.
+        training: The configuration to train: model, feature groups, sampling, seeds, folds,
+            budgets, baseline, segments and gate limits.
+        data_dir: The repository's ``data`` folder; the feature table and the split are read from
+            it and the files of :func:`model_paths` written to it.
+
+    Returns:
+        The run record: ``dataset``, ``run_id``, ``started``, ``status`` (``passed``),
+        ``configuration``, ``code`` (:func:`code_version`), ``libraries``, ``data`` (SHA-256 of
+        the inputs, development logins and takeovers), ``seconds`` per stage, ``cross_validation``,
+        ``repeats``, ``baseline_repeat_0``, ``segments``, ``thresholds``, ``gates`` and ``model``
+        (SHA-256 of the saved file and whether it is the same as the previous one).
 
     Raises:
         ConfigurationError: If the configuration does not fit the data (checked before training).
@@ -414,7 +498,19 @@ def _positive(text: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point."""
+    """Command-line entry point.
+
+    Reads ``--dataset`` (default ``rba``) and ``--repeats`` (cross-validation repeats, overriding
+    the configuration), runs :func:`run` on the repository's ``data`` folder and, on success,
+    prints the PR-AUC, whether the model changed and the path of the run record.
+
+    Args:
+        argv: Command-line arguments; None reads them from sys.argv.
+
+    Returns:
+        0 if the model passed its gates and was saved; 1 if a blocking gate failed or the
+        configuration does not fit the data (the reason is logged as an error).
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", default="rba", help="Name of conf/dataset/<name>.yaml")
     parser.add_argument(

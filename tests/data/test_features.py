@@ -53,6 +53,7 @@ def _events(rows: list[dict[str, Any]]) -> pl.LazyFrame:
 
 
 def at(minutes: int) -> dt.datetime:
+    """Return the time ``minutes`` after 2020-03-01 00:00, inside the label window."""
     return dt.datetime(2020, 3, 1) + dt.timedelta(minutes=minutes)
 
 
@@ -77,12 +78,14 @@ SUCCESSES_BEFORE_TAKEOVER = 2  # January + event 1
 
 @pytest.fixture
 def hand_built() -> pl.DataFrame:
+    """Feature table built from ``HAND_BUILT`` with the label window applied."""
     return build_features(_events(HAND_BUILT), _config(**WINDOW)).collect()
 
 
 def test_population_is_successful_logins_of_real_accounts_inside_the_window(
     hand_built: pl.DataFrame,
 ) -> None:
+    """Only successful logins of real accounts inside the label window are kept, in time order."""
     assert hand_built["event_id"].to_list() == [
         USER_1_IN_WINDOW,
         USER_2_FIRST,
@@ -94,6 +97,7 @@ def test_population_is_successful_logins_of_real_accounts_inside_the_window(
 
 
 def test_history_counts_logins_before_the_window(hand_built: pl.DataFrame) -> None:
+    """Logins before the label window count as history for later logins."""
     row = hand_built.filter(pl.col("event_id") == USER_1_IN_WINDOW).row(0, named=True)
     assert row["prior_successes"] == 1, "the January login is history"
     assert row["first_success"] is False
@@ -101,6 +105,7 @@ def test_history_counts_logins_before_the_window(hand_built: pl.DataFrame) -> No
 
 
 def test_first_success_has_no_novelty(hand_built: pl.DataFrame) -> None:
+    """A user's first successful login has no history and null novelty and gap features."""
     row = hand_built.filter(pl.col("event_id") == USER_2_FIRST).row(0, named=True)
     assert row["first_success"] is True
     assert row["prior_successes"] == 0
@@ -110,6 +115,7 @@ def test_first_success_has_no_novelty(hand_built: pl.DataFrame) -> None:
 
 
 def test_novelty_and_failures_for_the_takeover(hand_built: pl.DataFrame) -> None:
+    """The takeover gets its new country, network and IP, its recent failure and its history."""
     row = hand_built.filter(pl.col("event_id") == TAKEOVER).row(0, named=True)
     assert row["label_ato"] is True
     assert row["attack_ip"] is True
@@ -122,12 +128,14 @@ def test_novelty_and_failures_for_the_takeover(hand_built: pl.DataFrame) -> None
 
 
 def test_returning_to_a_known_value_is_not_new(hand_built: pl.DataFrame) -> None:
+    """Returning to a country or network the user used before is not new."""
     row = hand_built.filter(pl.col("event_id") == USER_1_RETURNS).row(0, named=True)
     assert row["new_country"] is False
     assert row["new_asn"] is False
 
 
 def test_global_rarity_and_sharing_ignore_the_catch_all(hand_built: pl.DataFrame) -> None:
+    """Global shares and prior-user counts use earlier real accounts only, not the catch-all."""
     row = hand_built.filter(pl.col("event_id") == TAKEOVER).row(0, named=True)
     # earlier successes of real accounts: events 0, 1, 3 (all NO); the catch-all's XX is ignored
     assert row["global_share_country"] == 0.0, "SE never seen before"
@@ -160,6 +168,7 @@ def _random_events(n: int, seed: int) -> list[dict[str, Any]]:
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_no_feature_uses_information_from_the_future(seed: int) -> None:
+    """Features of a login are the same when every later event is removed."""
     events = _random_events(160, seed)
     config = _config()
     full = build_features(_events(events), config).collect()
@@ -171,6 +180,7 @@ def test_no_feature_uses_information_from_the_future(seed: int) -> None:
 
 
 def test_feature_groups() -> None:
+    """Default features are unique and exclude artefacts and RTT; country is never a model input."""
     columns = feature_columns()
     assert len(columns) == len(set(columns))
     assert "attack_ip" in columns
@@ -181,11 +191,13 @@ def test_feature_groups() -> None:
 
 
 def test_country_is_carried_as_context(hand_built: pl.DataFrame) -> None:
+    """The country of the login is kept in the table as context."""
     takeover = hand_built.filter(pl.col("event_id") == TAKEOVER).row(0, named=True)
     assert takeover["country"] == "SE"
 
 
 def test_network_reputation_counts_every_earlier_attempt(hand_built: pl.DataFrame) -> None:
+    """Network reputation counts every earlier attempt from the ASN, failed or successful."""
     row = hand_built.filter(pl.col("event_id") == USER_2_FIRST).row(0, named=True)
     # earlier attempts from ASN 100: January success, event 1 success, event 2 failure
     assert row["asn_prior_fail_share"] == pytest.approx(1 / 3)
@@ -196,6 +208,7 @@ def test_network_reputation_counts_every_earlier_attempt(hand_built: pl.DataFram
 
 
 def test_burst_counts_only_previous_full_hours() -> None:
+    """Network burst counts cover the previous full hours, not attempts in the current hour."""
     rows = [
         {"user_id": 1, "timestamp": at(0), "login_success": False},
         {"user_id": 2, "timestamp": at(30), "login_success": False},
@@ -211,6 +224,7 @@ def test_burst_counts_only_previous_full_hours() -> None:
 
 
 def test_travel_features(hand_built: pl.DataFrame) -> None:
+    """Country change within an hour and the prior country count follow the user's logins."""
     takeover = hand_built.filter(pl.col("event_id") == TAKEOVER).row(0, named=True)
     assert takeover["country_change_1h"] is True, "NO 40 minutes earlier, now SE"
     assert takeover["user_prior_countries"] == 1

@@ -21,7 +21,16 @@ DRIFT_LIMIT = 0.2
 
 
 def ks_statistic(a: np.ndarray, b: np.ndarray) -> float:
-    """Two-sample Kolmogorov-Smirnov statistic of two 1-D samples (0 if either is empty)."""
+    """Two-sample Kolmogorov-Smirnov statistic of two 1-D samples (0 if either is empty).
+
+    Args:
+        a: First sample of numbers, without missing values.
+        b: Second sample of numbers, without missing values.
+
+    Returns:
+        The largest absolute gap between the two empirical distribution functions, between 0
+        and 1; 0 if either sample is empty.
+    """
     if a.size == 0 or b.size == 0:
         return 0.0
     a, b = np.sort(a), np.sort(b)
@@ -32,7 +41,18 @@ def ks_statistic(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def total_variation(a: pl.Series, b: pl.Series) -> float:
-    """Total variation distance between the value shares of two samples (nulls included)."""
+    """Total variation distance between the value shares of two samples (nulls included).
+
+    Values are compared as text, and null counts as one more value.
+
+    Args:
+        a: First sample.
+        b: Second sample.
+
+    Returns:
+        Half the sum of the absolute differences between the share of each value in ``a`` and
+        in ``b``, between 0 and 1; 0 if either sample is empty.
+    """
     if a.len() == 0 or b.len() == 0:
         return 0.0
     shares = (
@@ -66,7 +86,23 @@ def drift_report(
     *,
     limit: float = DRIFT_LIMIT,
 ) -> pl.DataFrame:
-    """One row per column: method, score, the null-share gap and whether it is within ``limit``."""
+    """One row per column: method, score, the null-share gap and whether it is within ``limit``.
+
+    Numeric columns are compared with :func:`ks_statistic` on their known values, the others
+    with :func:`total_variation`.
+
+    Args:
+        reference: Sample to compare against, for example the development side of the split.
+        current: Sample to compare, for example the test side of the split.
+        columns: Columns to compare; each must be present in both frames.
+        limit: Score from which a column counts as drifted.
+
+    Returns:
+        One row per column of ``columns``, in that order: ``column``, ``method``
+        (``kolmogorov_smirnov`` or ``total_variation``), ``distance``, ``null_share_gap`` (the
+        absolute difference in the share of nulls), ``score`` (the larger of the two) and
+        ``within_limit`` (``score`` strictly below ``limit``).
+    """
     rows = []
     for column in columns:
         a, b = reference[column], current[column]

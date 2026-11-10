@@ -54,11 +54,14 @@ def _raw_csv(path: Path, seed: int = 0) -> Path:
 
 @pytest.fixture
 def config() -> DatasetConfig:
+    """The toy dataset configuration, with the label window set."""
     return _config(**WINDOW)
 
 
 @pytest.fixture
 def data_dir(tmp_path: Path, config: DatasetConfig, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A temporary data directory where the download step writes a toy raw CSV."""
+
     def download(cfg: DatasetConfig, raw_dir: Path) -> Path:
         raw_dir.mkdir(parents=True, exist_ok=True)
         return _raw_csv(raw_dir / Path(cfg.source.member).name)
@@ -81,6 +84,7 @@ def _no_rebuild(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_pipeline_builds_and_validates_every_stage(config: DatasetConfig, data_dir: Path) -> None:
+    """A run builds and validates every stage, then reports the steps and the drift table."""
     report = pipeline.run(config, data_dir, drift_limit=1.01)
     assert report["status"] == "passed"
     assert [s["step"] for s in report["steps"]] == [*STEPS, "drift between development and test"]
@@ -95,6 +99,7 @@ def test_pipeline_builds_and_validates_every_stage(config: DatasetConfig, data_d
 def test_validate_only_checks_existing_outputs_without_rebuilding(
     config: DatasetConfig, data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``validate_only`` checks the existing outputs without downloading or rebuilding them."""
     pipeline.run(config, data_dir, drift_limit=1.01)
     _no_rebuild(monkeypatch)
     report = pipeline.run(config, data_dir, validate_only=True, drift_limit=1.01)
@@ -105,6 +110,7 @@ def test_validate_only_checks_existing_outputs_without_rebuilding(
 def test_a_broken_output_stops_the_pipeline_and_the_report_says_where(
     config: DatasetConfig, data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An output that breaks its schema stops the run, and the report names the step."""
     pipeline.run(config, data_dir, drift_limit=1.01)
     path = features_path(config, data_dir)
     pl.read_parquet(path).with_columns(pl.lit(99, pl.Int8).alias("hour")).write_parquet(path)
@@ -121,6 +127,7 @@ def test_a_broken_output_stops_the_pipeline_and_the_report_says_where(
 def test_a_rebuild_that_fails_its_checks_keeps_the_previous_output(
     config: DatasetConfig, data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A rebuild that fails validation keeps the previous output and leaves no partial file."""
     pipeline.run(config, data_dir, drift_limit=1.01)
     path = features_path(config, data_dir)
     before = pl.read_parquet(path)
@@ -139,6 +146,7 @@ def test_a_rebuild_that_fails_its_checks_keeps_the_previous_output(
 
 
 def test_drift_over_the_limit_stops_the_pipeline(config: DatasetConfig, data_dir: Path) -> None:
+    """Drift over the limit stops the run and keeps the drift table in the report."""
     with pytest.raises(pipeline.DriftError, match="drift"):
         pipeline.run(config, data_dir, drift_limit=0.0)
     report = _report(config, data_dir)
@@ -153,6 +161,8 @@ def test_drift_over_the_limit_stops_the_pipeline(config: DatasetConfig, data_dir
 def test_main_exit_code(
     monkeypatch: pytest.MonkeyPatch, error: Exception | None, code: int
 ) -> None:
+    """``main`` exits with 0 on success and 1 on a drift or schema failure."""
+
     def fake_run(*_: object, **__: object) -> dict[str, Any]:
         if error is not None:
             raise error

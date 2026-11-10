@@ -30,7 +30,21 @@ BoolArray = npt.NDArray[np.bool_]
 def assign_folds(
     features: pl.DataFrame, *, n_folds: int = 5, n_repeats: int = 3, seed: int = SEED
 ) -> pl.DataFrame:
-    """Fold of every user for each repeat (columns ``fold_0`` … ``fold_{n_repeats-1}``)."""
+    """Fold of every user for each repeat (columns ``fold_0`` … ``fold_{n_repeats-1}``).
+
+    Folds are grouped by user and stratified by label at user level: users with and without a
+    takeover are dealt out to the folds separately.
+
+    Args:
+        features: Login rows with the ``user_id`` and ``label_ato`` columns.
+        n_folds: Number of folds per repeat.
+        n_repeats: Number of independent fold assignments.
+        seed: Seed of the random assignment.
+
+    Returns:
+        One row per user, ordered by ``user_id``: ``user_id``, ``has_takeover`` and one ``fold_<r>``
+        column (fold number 0 to ``n_folds - 1``) per repeat.
+    """
     users = features.group_by(USER).agg(pl.col(LABEL).any().alias("has_takeover")).sort(USER)
     flags = users["has_takeover"].to_numpy()
     rng = np.random.default_rng(seed)
@@ -68,7 +82,16 @@ class Metrics(TypedDict):
 
 
 def evaluate(y: BoolArray, score: FloatArray) -> Metrics:
-    """All protocol metrics for one score vector (higher = more suspicious)."""
+    """All protocol metrics for one score vector (higher = more suspicious).
+
+    Args:
+        y: True where the login is a takeover; at least one takeover and one legitimate login.
+        score: One score per login, aligned with ``y``.
+
+    Returns:
+        PR-AUC, ROC-AUC, prevalence, recall at the 0.1% and 1% alert budgets, and precision and
+        friction at the 1% budget (expected values under random tie-breaking).
+    """
     positives = int(y.sum())
     tp_01, _ = _budget_counts(y, score, BUDGETS[0])
     tp_1, flagged_1 = _budget_counts(y, score, BUDGETS[1])
@@ -90,6 +113,13 @@ def average_precision_from_positives(
 
     AP is the mean, over positives, of the precision at the threshold equal to that positive's
     score, counting every item scoring at least as high. Needs negatives sorted ascending.
+
+    Args:
+        positive_scores: Scores of the takeovers, in any order.
+        negative_scores_sorted: Scores of the legitimate logins, sorted ascending.
+
+    Returns:
+        The average precision, between 0 and 1.
     """
     pos = np.sort(positive_scores)[::-1]
     tp_ge = np.searchsorted(-pos, -pos, side="right")  # positives scoring >= each positive
@@ -100,7 +130,18 @@ def average_precision_from_positives(
 def bootstrap_pr_auc(
     y: BoolArray, score: FloatArray, *, n_boot: int = 2_000, seed: int = SEED, level: float = 0.95
 ) -> tuple[float, float]:
-    """Bootstrap interval for PR-AUC, resampling positives (negatives held fixed)."""
+    """Bootstrap interval for PR-AUC, resampling positives (negatives held fixed).
+
+    Args:
+        y: True where the login is a takeover.
+        score: One score per login, aligned with ``y``.
+        n_boot: Number of bootstrap replicates.
+        seed: Seed of the resampling.
+        level: Coverage of the interval (0.95 gives the 2.5% and 97.5% quantiles).
+
+    Returns:
+        The lower and upper bounds of the interval.
+    """
     rng = np.random.default_rng(seed)
     positives, negatives = score[y], np.sort(score[~y])
     replicates = [
@@ -113,7 +154,14 @@ def bootstrap_pr_auc(
 
 
 def summarise(per_fold: Sequence[Metrics]) -> pl.DataFrame:
-    """Mean, std, min and max of every metric across folds."""
+    """Mean, std, min and max of every metric across folds.
+
+    Args:
+        per_fold: The metrics of each fold, as returned by :func:`evaluate`.
+
+    Returns:
+        One row per metric: ``metric``, ``mean``, ``std``, ``min``, ``max``.
+    """
     frame = pl.DataFrame(per_fold)
     return pl.DataFrame(
         {
