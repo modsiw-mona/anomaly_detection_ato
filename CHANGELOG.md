@@ -56,7 +56,7 @@ to its pull request.
 - Inference pipeline (`make inference_pipeline`): scores a side of the split with the saved model (SHA-256
   checked), after validating the batch and reporting its drift from the development side, and writes every
   login's score and response tier. `make pipelines` runs the feature, training and inference pipelines in order.
-  ([#54](https://github.com/modsiw-mona/anomaly_detection_ato/issues/54))
+  ([#55](https://github.com/modsiw-mona/anomaly_detection_ato/pull/55))
 - The inference module refuses a model file whose SHA-256 differs from its metadata, and uses the thresholds
   saved with the model. ([#53](https://github.com/modsiw-mona/anomaly_detection_ato/pull/53))
 
