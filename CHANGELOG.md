@@ -10,6 +10,8 @@ to its pull request.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-10
+
 ### Added
 
 - Data download from Zenodo with checksum verification and safe extraction, a standard field schema, minimum data
@@ -100,3 +102,6 @@ to its pull request.
 - The demo checks every downloaded file against the SHA-256 committed in the repository before loading it, and
   never loads a model file that does not match. ([#41](https://github.com/modsiw-mona/anomaly_detection_ato/pull/41))
 - Dependencies kept up to date by Dependabot, with a dependency review on pull requests.
+
+[Unreleased]: https://github.com/modsiw-mona/anomaly_detection_ato/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/modsiw-mona/anomaly_detection_ato/releases/tag/v1.0.0

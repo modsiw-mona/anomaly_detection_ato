@@ -1,6 +1,6 @@
 [project]
 name = "anomaly-detection-ato"
-version = "0.1.0"
+version = "1.0.0"
 description = "Master's thesis project on Account Take Over (ATO) detection in authentication records using anomaly detection methodologies"
 authors = [
     { name = "Sofia A", email = "sofiaarangopat@hotmail.com" },
