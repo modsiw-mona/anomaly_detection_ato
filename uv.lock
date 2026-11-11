@@ -46,7 +46,7 @@ wheels = [
 
 [[package]]
 name = "anomaly-detection-ato"
-version = "0.1.0"
+version = "1.0.0"
 source = { virtual = "." }
 default-groups = ["dev", "docs"]
 dependencies = [
